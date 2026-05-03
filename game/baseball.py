@@ -158,23 +158,17 @@ class Ball:
         """
         Return (screen_x, screen_y) for the current ball position.
 
-        Perspective: the field contracts linearly from FIELD_WIDTH_NEAR at
-        PLATE_Y to FIELD_WIDTH_FAR at HORIZON_Y.  We interpolate along z.
+        z_norm = 1 - self.z maps z=PITCHER_DEPTH(0.60) → 0.40 (pitcher position)
+        and z=0 → 1.0 (plate), aligning the ball with the drawn pitcher character.
         """
-        t = self.z / PITCHER_DEPTH   # 1 = pitcher (far), 0 = plate (near camera)
-        # Catcher POV: pitcher toward horizon (top), plate at bottom. Ease so the
-        # ball spends longer small in the tunnel then accelerates into the zone.
-        u = 1.0 - t
-        u_eased = u ** 1.28
-        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * u_eased)
+        z_norm = 1.0 - self.z   # 0.40 at pitcher, 1.0 at plate
+        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * z_norm)
 
-        # Horizontal scale: wide near the plate (t=0), narrow at pitcher (t=1)
+        t = self.z / PITCHER_DEPTH   # 1=pitcher, 0=plate (for half_w interpolation)
         half_w = (FIELD_WIDTH_NEAR / 2) * (1.0 - t) + (FIELD_WIDTH_FAR / 2) * t
         scale  = half_w / max(STRIKE_ZONE_W * 3, 0.001)
 
         screen_x = int(PLATE_X + self.x * scale)
-
-        # Vertical: positive y = up = smaller screen_y
         screen_y -= int(self.y * scale * 0.62)
 
         return screen_x, screen_y
@@ -189,10 +183,9 @@ class Ball:
 
     def get_shadow_pos(self) -> tuple[int, int]:
         """Shadow on the ground (same vertical path as the ball body)."""
+        z_norm = 1.0 - self.z
+        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * z_norm)
         t = self.z / PITCHER_DEPTH
-        u = 1.0 - t
-        u_eased = u ** 1.28
-        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * u_eased)
         half_w = (FIELD_WIDTH_NEAR / 2) * (1.0 - t) + (FIELD_WIDTH_FAR / 2) * t
         screen_x = int(PLATE_X + self.x * (half_w / max(STRIKE_ZONE_W * 3, 0.001)))
         return screen_x, screen_y

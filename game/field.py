@@ -37,7 +37,7 @@ def _field_to_screen(x_field: float, z_norm: float) -> tuple[int, int]:
     """z_norm 0 = horizon, 1 = home plate."""
     py = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * z_norm)
     half_w = _HALF_FAR + (_HALF_NEAR - _HALF_FAR) * z_norm
-    px = int(PLATE_X + x_field * half_w * 3.5)
+    px = int(PLATE_X + x_field * half_w * 2.0)
     return px, py
 
 

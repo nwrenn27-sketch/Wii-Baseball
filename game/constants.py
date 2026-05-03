@@ -23,13 +23,13 @@ TITLE = "Wii Baseball"
 # ---------------------------------------------------------------------------
 # Field geometry (pseudo-3D projection)
 # ---------------------------------------------------------------------------
-HORIZON_Y = 178          # Lower horizon = longer tunnel (catcher POV up the middle)
+HORIZON_Y = 300          # Higher horizon = more overhead/isometric Google Baseball angle
 PLATE_Y   = 668          # Home plate slightly lower — ball finishes “in your lap”
 # Symmetric catcher / umpire camera — plate centered, look straight at pitcher.
 BATTER_VIEW_OFFSET_X = 0
 PLATE_X   = SCREEN_W // 2 + BATTER_VIEW_OFFSET_X
-FIELD_WIDTH_NEAR  = 920  # Wide at the plate (peripheral grass)
-FIELD_WIDTH_FAR   = 62   # Tight vanishing point toward pitcher
+FIELD_WIDTH_NEAR  = 700  # Narrower near plate for isometric view
+FIELD_WIDTH_FAR   = 40   # Tight vanishing point toward pitcher
 PITCHER_DEPTH     = 0.60 # Normalized depth (0=plate, 1=horizon) where pitcher stands
 MOUND_Y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * PITCHER_DEPTH)
 
