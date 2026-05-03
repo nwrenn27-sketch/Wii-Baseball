@@ -24,11 +24,12 @@ To reduce CPU use, pass --low-fps on the command line for 30 FPS mode.
 
 Usage
 -----
-  python main.py [--low-fps] [--no-camera] [--fullscreen] [--innings N]
+  python main.py [--low-fps] [--no-camera] [--fullscreen] [--innings N] [--camera N]
 """
 
 import sys
 import argparse
+import random
 import time
 
 import cv2
@@ -65,6 +66,7 @@ def parse_args():
     p.add_argument("--no-camera",  action="store_true", help="Keyboard-only (no webcam)")
     p.add_argument("--fullscreen", action="store_true", help="Fullscreen mode")
     p.add_argument("--innings",    type=int, default=INNINGS, help="Number of innings")
+    p.add_argument("--camera",     type=int, default=-1,      help="Camera index (default: auto)")
     return p.parse_args()
 
 
@@ -72,17 +74,33 @@ def parse_args():
 # Camera helpers
 # ---------------------------------------------------------------------------
 
-def open_camera(no_camera: bool):
-    """Try to open the first available webcam.  Returns (cap, available)."""
+def open_camera(no_camera: bool, camera_index: int = -1):
     if no_camera:
         return None, False
-    cap = cv2.VideoCapture(0)
-    if cap.isOpened():
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS,          30)
-        return cap, True
-    return None, False
+
+    def _try(idx):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS,          30)
+            return cap
+        cap.release()
+        return None
+
+    if camera_index >= 0:
+        cap = _try(camera_index)
+        return (cap, True) if cap else (None, False)
+
+    # Prefer the last working index (e.g. built-in cam over Continuity on macOS).
+    best = None
+    for idx in range(4):
+        cap = _try(idx)
+        if cap:
+            if best:
+                best.release()
+            best = cap
+    return (best, True) if best else (None, False)
 
 
 def read_frame(cap):
@@ -132,7 +150,7 @@ class WiiBaseball:
         sound.init()
 
         # Camera
-        self.cap, self.cam_available = open_camera(args.no_camera)
+        self.cap, self.cam_available = open_camera(args.no_camera, args.camera)
         self.detector = SwingDetector(max_hands=2, flip_camera=True) if self.cam_available else None
 
         # Game objects
@@ -159,6 +177,7 @@ class WiiBaseball:
         self._calib_frames   = 0
         self._swing_cooldown = False   # guard double-triggers
         self._keyboard_swing = False   # keyboard fallback flag
+        self._calib_skip     = False   # SPACE skips calibration early
 
         # Keyboard-only swing: track last space press timing
         self._kb_swing_t       = 0.0
@@ -202,6 +221,8 @@ class WiiBaseball:
         elif key in (pygame.K_SPACE, pygame.K_RETURN):
             if self.state == GameState.MENU:
                 self._start_game()
+            elif self.state == GameState.CALIBRATION:
+                self._calib_skip = True
             elif self.state == GameState.HALF_INNING:
                 self._begin_wind_up()
             elif self.state == GameState.GAME_OVER:
@@ -326,7 +347,12 @@ class WiiBaseball:
 
             if swing_fired and not self._swing_cooldown:
                 self._swing_cooldown = True
-                outcome = self.batter.resolve_swing(self.ball)
+                vel = (
+                    self.detector.swing_velocity
+                    if self.detector
+                    else random.uniform(0.06, 0.10)
+                )
+                outcome = self.batter.resolve_swing(self.ball, vel)
                 self.ball.active = False
                 self._on_outcome(outcome)
 
@@ -340,8 +366,8 @@ class WiiBaseball:
                 self._begin_wind_up()
 
     def _update_calibration(self, frame):
-        if frame is None:
-            # No camera: skip calibration
+        if frame is None or self._calib_skip:
+            self._calib_skip = False
             self._begin_wind_up()
             return
 

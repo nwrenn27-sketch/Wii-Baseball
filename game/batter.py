@@ -88,7 +88,7 @@ class Batter:
     # Swing resolution
     # ------------------------------------------------------------------
 
-    def resolve_swing(self, ball) -> str:
+    def resolve_swing(self, ball, swing_velocity: float | None = None) -> str:
         """
         Determine the outcome of a swing commit from timing only
         (ball.progress near 1.0 = barrel on the ball).
@@ -96,6 +96,8 @@ class Batter:
         Parameters
         ----------
         ball : baseball.Ball instance (current pitch in flight)
+        swing_velocity : float, optional
+            From the swing detector when using a camera; ignored for outcomes.
 
         Returns
         -------
