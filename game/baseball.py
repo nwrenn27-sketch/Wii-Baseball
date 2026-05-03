@@ -48,14 +48,15 @@ class Ball:
     x, y, z   : floats  current 3-D position
     """
 
-    RADIUS_FAR  = 6    # px at release — easier to track out of the hand
-    RADIUS_NEAR = 58   # px at plate — strong “at the mask” read
+    RADIUS_FAR  = 3    # tiny dot at pitcher release
+    RADIUS_NEAR = 11   # small at plate
 
     def __init__(self):
         self.pitch_type: str  = "fastball"
         self.active:     bool = False
         self.progress:   float = 0.0
-        self._trail: "deque[tuple[int, int, int]]" = deque(maxlen=18)
+        self._trail: deque = deque(maxlen=12)
+        self._pass_t:    int  = 0   # frames of visual continuation after plate
 
         # 3-D position
         self.x: float = 0.0   # lateral (field units)
@@ -95,10 +96,11 @@ class Ball:
         self._target_y  = target_y
 
         pd = PITCH_TYPES[pitch_type]
-        self._speed  = pd["speed"] * PITCH_SPEED_SCALE
+        self._speed  = 0.014           # fixed speed for all pitch types
         self._xa     = pd["x_accel"]
         self._ya     = pd["y_accel"]
         self._trail.clear()
+        self._pass_t = 0
 
         # Start at pitcher's mound, centred
         self.z  = PITCHER_DEPTH
@@ -113,37 +115,36 @@ class Ball:
     # ------------------------------------------------------------------
 
     def update(self):
-        """Advance ball by one frame.  No-op if not active."""
+        """Advance ball by one frame."""
+        # Visual pass-through: continue moving after crossing plate
+        if self._pass_t > 0:
+            self._pass_t -= 1
+            self.z += self._vz
+            sx, sy = self.get_screen_pos()
+            self._trail.append((sx, sy, self.get_radius()))
+            return
+
         if not self.active:
             return
 
-        # Accumulate acceleration
         self._vx += self._xa
         self._vy += self._ya
 
         self.x += self._vx
         self.y += self._vy
-        # Pull toward umpire-selected target so breaking balls still finish on the
-        # paint (otherwise accel drifts pitches far from intended nibble).
         pull = 0.012 + 0.26 * ((1.0 - (self.z / PITCHER_DEPTH)) ** 2.4)
         self.x += (self._target_x - self.x) * pull
         self.y += (self._target_y - self.y) * pull
 
-        self.z += self._vz   # z decreases toward 0
+        self.z += self._vz
 
-        # Progress: how much of the pitcher→plate distance has been covered
-        self.progress = 1.0 - (self.z / PITCHER_DEPTH)
-        self.progress = max(0.0, min(1.0, self.progress))
+        self.progress = max(0.0, min(1.0, 1.0 - (self.z / PITCHER_DEPTH)))
 
-        # Ball has crossed home plate
         if self.z <= 0.0:
-            self.z = 0.0
-            self.active = False
+            self.in_zone = (abs(self.x) < STRIKE_ZONE_W and abs(self.y) < STRIKE_ZONE_H)
             self.progress = 1.0
-            # Geographic strike zone at the plate (same rule as swing resolution)
-            self.in_zone = (
-                abs(self.x) < STRIKE_ZONE_W and abs(self.y) < STRIKE_ZONE_H
-            )
+            self.active   = False
+            self._pass_t  = 16   # ~0.27 s of visual continuation
 
         if self.active:
             sx, sy = self.get_screen_pos()

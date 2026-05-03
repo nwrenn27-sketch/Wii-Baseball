@@ -82,7 +82,7 @@ class FieldRenderer:
     # ── ball ────────────────────────────────────────────────────────────────
 
     def draw_ball(self, surface: pygame.Surface, ball):
-        if not ball.active and ball.progress < 1.0:
+        if not ball.active and ball._pass_t <= 0:
             return
 
         sx, sy = ball.get_screen_pos()
