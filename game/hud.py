@@ -125,7 +125,7 @@ class HUD:
         title = self._f_xl.render("CALIBRATION", True, WII_YELLOW)
         surface.blit(title, title.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 90)))
 
-        instr = self._f_lg.render("Raise your bat hand and hold still", True, WHITE)
+        instr = self._f_lg.render("Raise your bat hand and hold still  (SPACE to skip)", True, WHITE)
         surface.blit(instr, instr.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 10)))
 
         bw, bh = 380, 22

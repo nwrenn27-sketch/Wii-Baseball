@@ -156,12 +156,9 @@ class WiiBaseball:
         self._result_start   = 0.0
         self._result_dur     = 0.0
         self._calib_frames   = 0
-        self._swing_cooldown = False   # guard double-triggers
-        self._keyboard_swing = False   # keyboard fallback flag
-
-        # Keyboard-only swing: track last space press timing
-        self._kb_swing_t       = 0.0
-        self._kb_swing_pending = False
+        self._swing_cooldown = False
+        self._keyboard_swing = False
+        self._calib_skip     = False   # SPACE skips calibration early
 
     # ------------------------------------------------------------------
     # Main loop
@@ -201,12 +198,13 @@ class WiiBaseball:
         elif key in (pygame.K_SPACE, pygame.K_RETURN):
             if self.state == GameState.MENU:
                 self._start_game()
+            elif self.state == GameState.CALIBRATION:
+                self._calib_skip = True      # skip calibration early
             elif self.state == GameState.HALF_INNING:
                 self._begin_wind_up()
             elif self.state == GameState.GAME_OVER:
                 self._restart()
             elif self.state == GameState.PITCHING and not self.cam_available:
-                # Keyboard swing: trigger a swing with the current ball progress
                 self._keyboard_swing = True
 
         elif key == pygame.K_c:
@@ -342,8 +340,8 @@ class WiiBaseball:
                 self._begin_wind_up()
 
     def _update_calibration(self, frame):
-        if frame is None:
-            # No camera: skip calibration
+        if frame is None or self._calib_skip:
+            self._calib_skip = False
             self._begin_wind_up()
             return
 

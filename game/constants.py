@@ -150,9 +150,9 @@ STRIKE_ZONE_H = 0.20
 # ---------------------------------------------------------------------------
 # Swing detection
 # ---------------------------------------------------------------------------
-SWING_VEL_THRESHOLD  = 0.028
-SWING_HISTORY_FRAMES = 8
-SWING_COOLDOWN_MS    = 800
+SWING_VEL_THRESHOLD  = 0.022   # lowered for easier demo detection
+SWING_HISTORY_FRAMES = 6
+SWING_COOLDOWN_MS    = 700
 
 HIT_PERFECT_WINDOW  = 0.07
 HIT_GOOD_WINDOW     = 0.14
@@ -178,4 +178,4 @@ PITCH_RELEASE_DELAY_MS = 350
 # ---------------------------------------------------------------------------
 # Calibration
 # ---------------------------------------------------------------------------
-CALIB_FRAMES = 60
+CALIB_FRAMES = 40   # ~0.7 s at 60 fps — faster for demos
