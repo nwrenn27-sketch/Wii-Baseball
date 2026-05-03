@@ -1,40 +1,36 @@
-"""
-Catcher POV field renderer.
-
-The camera sits behind home plate looking up the center line. The ball grows
-and rushes the plate (see baseball.py easing + trail). The field is built as
-layered shapes: sky, stadium deck, outfield grass wings, clay runway, chalk,
-mound, and plate.
-
-Ball and trail are drawn by draw_ball() after draw().
-"""
-
 import math
-import random
 import pygame
 
 from game.constants import (
     SCREEN_W, SCREEN_H,
     HORIZON_Y, PLATE_Y, PLATE_X,
     FIELD_WIDTH_NEAR, FIELD_WIDTH_FAR,
-    SKY_TOP, SKY_BOT, CLOUD_WHITE,
-    FIELD_GREEN, FIELD_DARK,
-    MOUND_TAN, BASELINE_WHT,
-    BASE_WHITE,
     WHITE, BLACK,
-    TRACK_TAN_LIGHT, TRACK_TAN_MID, TRACK_TAN_DARK,
-    GRASS_HI, GRASS_MID, GRASS_LO,
-    STADIUM_DEEP, STADIUM_BAND, STADIUM_RAIL,
-    CHALK_GLOW,
+    BALL_WHITE, BALL_SEAM,
 )
 
 _HALF_NEAR = FIELD_WIDTH_NEAR // 2
-_HALF_FAR = FIELD_WIDTH_FAR // 2
+_HALF_FAR  = FIELD_WIDTH_FAR  // 2
 
-# Clay runway half-width at plate vs near horizon (screen px)
-_RUNWAY_HALF_PLATE = 112
-_RUNWAY_HALF_FAR = 14
-_Y_RUNWAY_TOP = HORIZON_Y + 42
+# Google-style palette
+_SKY        = (120, 200, 255)
+_SKY_LOW    = (160, 220, 255)
+_GRASS_OUT  = ( 72, 168,  68)
+_GRASS_IN   = ( 88, 190,  80)
+_DIRT       = (195, 155, 100)
+_DIRT_EDGE  = (165, 125,  75)
+_CHALK      = (245, 242, 228)
+_BASE_COL   = (250, 248, 238)
+_MOUND_COL  = (185, 148,  95)
+_CROWD_A    = ( 60, 120, 210)
+_CROWD_B    = (200,  60,  60)
+_CROWD_C    = (240, 200,  40)
+_SKIN       = (255, 210, 165)
+_HELMET_BLUE= ( 28,  72, 188)
+_HELMET_RED = (190,  32,  32)
+_UNIFORM_W  = (240, 242, 248)
+_UNIFORM_G  = (175, 178, 192)
+_PANTS_GRY  = (140, 143, 158)
 
 
 def _field_to_screen(x_field: float, z_norm: float) -> tuple[int, int]:
@@ -45,400 +41,319 @@ def _field_to_screen(x_field: float, z_norm: float) -> tuple[int, int]:
     return px, py
 
 
-class Cloud:
-    def __init__(self, x, y, w, h):
-        self.x, self.y, self.w, self.h = x, y, w, h
-        self.speed = 0.09
-
-    def update(self):
-        self.x += self.speed
-        if self.x > SCREEN_W + self.w:
-            self.x = -self.w
-
-    def draw(self, surface):
-        for ox, oy, r in [
-            (0, 0, self.h),
-            (self.w * 0.25, -self.h * 0.3, self.h * 0.7),
-            (-self.w * 0.25, -self.h * 0.2, self.h * 0.75),
-            (self.w * 0.4, self.h * 0.1, self.h * 0.55),
-        ]:
-            pygame.draw.ellipse(
-                surface, CLOUD_WHITE,
-                (int(self.x + ox - r), int(self.y + oy - r * 0.6),
-                 int(r * 2), int(r * 1.2)),
-            )
+# ── base positions (reused everywhere) ─────────────────────────────────────
+def _base_pos(which: str) -> tuple[int, int]:
+    if which == "1B":
+        return _field_to_screen( 0.55, 0.55)
+    if which == "2B":
+        return _field_to_screen( 0.00, 0.22)
+    if which == "3B":
+        return _field_to_screen(-0.55, 0.55)
+    return (PLATE_X, PLATE_Y - 8)   # home
 
 
 class FieldRenderer:
     def __init__(self):
-        rng = random.Random(42)
-        self._clouds = [
-            Cloud(120, 48, 200, 36),
-            Cloud(520, 32, 260, 40),
-            Cloud(980, 55, 180, 34),
-        ]
-        self._foul_left_far = _field_to_screen(-1.45, 0.03)
-        self._foul_right_far = _field_to_screen(1.45, 0.03)
-        self._foul_left_near = (PLATE_X - _HALF_NEAR, PLATE_Y)
-        self._foul_right_near = (PLATE_X + _HALF_NEAR, PLATE_Y)
-        self._outfield_pts = self._make_outfield_arc()
         self._sky_surf = self._build_sky()
-        self._seat_dots = [
-            (rng.randint(40, SCREEN_W - 40), rng.randint(8, HORIZON_Y - 70))
-            for _ in range(160)
+        # Pre-bake crowd dots (fixed seed = deterministic)
+        import random as _rng
+        rng = _rng.Random(7)
+        self._crowd = [
+            (rng.randint(0, SCREEN_W), rng.randint(4, HORIZON_Y - 60),
+             _CROWD_A if rng.random() < 0.5 else (_CROWD_B if rng.random() < 0.5 else _CROWD_C))
+            for _ in range(320)
         ]
-        self._scuff_pts = []
-        for _ in range(90):
-            self._scuff_pts.append(
-                (
-                    rng.randint(
-                        int(PLATE_X - _RUNWAY_HALF_PLATE + 8),
-                        int(PLATE_X + _RUNWAY_HALF_PLATE - 8),
-                    ),
-                    rng.randint(int(_Y_RUNWAY_TOP + 6), int(PLATE_Y - 10)),
-                )
-            )
 
     def update(self):
-        for c in self._clouds:
-            c.update()
+        pass  # reserved for future animations
 
     def draw(self, surface: pygame.Surface):
         surface.blit(self._sky_surf, (0, 0))
-        for c in self._clouds:
-            c.draw(surface)
-
-        self._draw_stadium(surface)
-        self._draw_outfield_grass(surface)
-        self._draw_warning_arc(surface)
-        self._draw_runway(surface)
-        self._draw_grass_stripes(surface)
-        self._draw_foul_lines(surface)
+        self._draw_crowd(surface)
+        self._draw_outfield(surface)
+        self._draw_infield_dirt(surface)
         self._draw_base_paths(surface)
         self._draw_bases(surface)
         self._draw_mound(surface)
         self._draw_home_plate(surface)
-        self._draw_batter_from_behind(surface)
-        self._draw_catcher_vignette(surface)
+        self._draw_pitcher(surface)
+        self._draw_batter(surface)
+
+    # ── ball ────────────────────────────────────────────────────────────────
 
     def draw_ball(self, surface: pygame.Surface, ball):
-        from game.constants import BALL_WHITE, BALL_SEAM
-
         if not ball.active and ball.progress < 1.0:
             return
 
         sx, sy = ball.get_screen_pos()
         r = ball.get_radius()
 
-        # Motion trail (brighter so path reads against grass / sky)
+        # Motion trail
         trail = list(ball._trail)
         if len(trail) >= 2:
             for i, (tx, ty, tr) in enumerate(trail):
-                if (tx, ty) == (sx, sy) and i == len(trail) - 1:
-                    continue
                 age = (i + 1) / max(len(trail), 1)
-                alpha = int(28 + 95 * age)
-                rr = max(2, int(tr * (0.42 + 0.48 * age)))
-                if alpha < 10:
-                    continue
-                ts = pygame.Surface((rr * 2 + 4, rr * 2 + 4), pygame.SRCALPHA)
-                pygame.draw.circle(ts, (255, 255, 255, alpha // 5), (rr + 2, rr + 2), rr + 1)
-                pygame.draw.circle(ts, (255, 252, 235, alpha), (rr + 2, rr + 2), rr)
-                surface.blit(ts, (tx - rr - 2, ty - rr - 2))
+                alpha = int(20 + 80 * age)
+                rr = max(2, int(tr * 0.65))
+                ts = pygame.Surface((rr * 2 + 2, rr * 2 + 2), pygame.SRCALPHA)
+                pygame.draw.circle(ts, (255, 255, 255, alpha), (rr + 1, rr + 1), rr)
+                surface.blit(ts, (tx - rr - 1, ty - rr - 1))
 
+        # Shadow
         shx, shy = ball.get_shadow_pos()
-        shadow_r = max(2, int(r * (0.42 + 0.2 * (1.0 - ball.progress))))
-        shadow_surf = pygame.Surface((shadow_r * 2 + 4, shadow_r + 4), pygame.SRCALPHA)
-        pygame.draw.ellipse(
-            shadow_surf, (25, 25, 30, min(110, 40 + int(70 * (1.0 - ball.progress)))),
-            (0, 0, shadow_r * 2, shadow_r),
-        )
-        surface.blit(shadow_surf, (shx - shadow_r, shy - shadow_r // 2))
+        sr = max(2, int(r * 0.55))
+        ss = pygame.Surface((sr * 2 + 2, sr + 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(ss, (0, 0, 0, 55), (0, 0, sr * 2, sr))
+        surface.blit(ss, (shx - sr, shy - sr // 2))
 
-        # High-contrast rings so the ball separates from any background
-        for ring_r, col, w in ((r + 5, (0, 0, 0), 3), (r + 2, (255, 255, 255), 2)):
-            pygame.draw.circle(surface, col, (sx, sy), ring_r, w)
-
-        if r >= 5:
-            glow = pygame.Surface((r * 6, r * 6), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (255, 255, 255, 55), (r * 3, r * 3), int(r * 2.35))
-            surface.blit(glow, (sx - r * 3, sy - r * 3))
-
-        pygame.draw.circle(surface, (235, 232, 220), (sx, sy), r)
-        pygame.draw.circle(surface, BALL_WHITE, (sx - max(1, r // 8), sy - max(1, r // 8)), max(2, r - 2))
+        # Ball body
+        pygame.draw.circle(surface, (40, 40, 40), (sx, sy), r + 2)
+        pygame.draw.circle(surface, BALL_WHITE, (sx, sy), r)
 
         if r >= 6:
             seam_w = max(2, r // 4)
-            pygame.draw.arc(
-                surface, BALL_SEAM,
-                (sx - r + 2, sy - r, r, r * 2),
-                math.pi * 0.2, math.pi * 0.8, seam_w,
-            )
-            pygame.draw.arc(
-                surface, BALL_SEAM,
-                (sx + 2, sy - r, r, r * 2),
-                math.pi * 1.2, math.pi * 1.8, seam_w,
-            )
+            pygame.draw.arc(surface, BALL_SEAM,
+                            (sx - r + 2, sy - r, r, r * 2),
+                            math.pi * 0.2, math.pi * 0.8, seam_w)
+            pygame.draw.arc(surface, BALL_SEAM,
+                            (sx + 2, sy - r, r, r * 2),
+                            math.pi * 1.2, math.pi * 1.8, seam_w)
 
-        pygame.draw.circle(surface, (40, 40, 48), (sx, sy), r, 2)
+    # ── strike zone ─────────────────────────────────────────────────────────
 
     def draw_strike_zone(self, surface: pygame.Surface, alpha: int = 120):
         from game.constants import STRIKE_ZONE_W, STRIKE_ZONE_H
-
         tl = _field_to_screen(-STRIKE_ZONE_W, 1.0)
-        br = _field_to_screen(STRIKE_ZONE_W, 1.0)
+        br = _field_to_screen( STRIKE_ZONE_W, 1.0)
         zone_w = max(24, br[0] - tl[0])
         zone_h = int(STRIKE_ZONE_H * (PLATE_Y - HORIZON_Y) * 1.05)
         zone_rect = pygame.Rect(tl[0], tl[1] - zone_h, zone_w, zone_h)
 
-        zone_surf = pygame.Surface((zone_w, zone_h), pygame.SRCALPHA)
-        for y in range(zone_h):
-            k = y / max(zone_h, 1)
-            a = int((alpha // 3) * (0.45 + 0.55 * k))
-            pygame.draw.line(zone_surf, (240, 255, 250, a), (0, y), (zone_w, y))
-        pygame.draw.rect(
-            zone_surf, (255, 255, 255, min(220, alpha + 55)), zone_surf.get_rect(), 3, border_radius=4,
-        )
-        surface.blit(zone_surf, zone_rect.topleft)
+        zs = pygame.Surface((zone_w, zone_h), pygame.SRCALPHA)
+        zs.fill((255, 255, 255, max(0, alpha // 5)))
+        pygame.draw.rect(zs, (255, 255, 255, min(220, alpha + 40)),
+                         zs.get_rect(), 3, border_radius=4)
+        surface.blit(zs, zone_rect.topleft)
 
-        # Umpire-style red corner brackets (inside vs outside the zone)
-        brk = min(18, max(10, zone_w // 5))
-        thick = 4
-        cr = (255, 60, 60)
+        brk, thick, cr = min(18, zone_w // 5), 4, (255, 80, 80)
         x0, y0 = zone_rect.left, zone_rect.top
         x1, y1 = zone_rect.right - 1, zone_rect.bottom - 1
-        # top-left
-        pygame.draw.line(surface, cr, (x0, y0), (x0 + brk, y0), thick)
-        pygame.draw.line(surface, cr, (x0, y0), (x0, y0 + brk), thick)
-        # top-right
-        pygame.draw.line(surface, cr, (x1, y0), (x1 - brk, y0), thick)
-        pygame.draw.line(surface, cr, (x1, y0), (x1, y0 + brk), thick)
-        # bottom-left
-        pygame.draw.line(surface, cr, (x0, y1), (x0 + brk, y1), thick)
-        pygame.draw.line(surface, cr, (x0, y1), (x0, y1 - brk), thick)
-        # bottom-right
-        pygame.draw.line(surface, cr, (x1, y1), (x1 - brk, y1), thick)
-        pygame.draw.line(surface, cr, (x1, y1), (x1, y1 - brk), thick)
+        for px, py, ex, ey in [
+            (x0, y0, x0 + brk, y0), (x0, y0, x0, y0 + brk),
+            (x1, y0, x1 - brk, y0), (x1, y0, x1, y0 + brk),
+            (x0, y1, x0 + brk, y1), (x0, y1, x0, y1 - brk),
+            (x1, y1, x1 - brk, y1), (x1, y1, x1, y1 - brk),
+        ]:
+            pygame.draw.line(surface, cr, (px, py), (ex, ey), thick)
 
-    # ------------------------------------------------------------------
-    # Layers
-    # ------------------------------------------------------------------
+    # ── private layers ───────────────────────────────────────────────────────
 
     def _build_sky(self) -> pygame.Surface:
-        surf = pygame.Surface((SCREEN_W, HORIZON_Y + 32))
-        h = HORIZON_Y + 32
+        surf = pygame.Surface((SCREEN_W, SCREEN_H))
+        h = HORIZON_Y + 20
         for y in range(h):
             t = y / max(h, 1)
-            t2 = t * t
-            r = int(SKY_TOP[0] * (1 - t) + SKY_BOT[0] * t + 18 * t2)
-            g = int(SKY_TOP[1] * (1 - t) + SKY_BOT[1] * t + 8 * t2)
-            b = int(SKY_TOP[2] * (1 - t) + SKY_BOT[2] * t)
-            pygame.draw.line(surf, (min(255, r), min(255, g), min(255, b)), (0, y), (SCREEN_W, y))
-        # Horizon haze band
-        band = pygame.Surface((SCREEN_W, 28), pygame.SRCALPHA)
-        for y in range(28):
-            a = int(55 * (y / 28.0))
-            pygame.draw.line(band, (240, 248, 255, a), (0, y), (SCREEN_W, y))
-        surf.blit(band, (0, h - 36))
+            r = int(_SKY[0] * (1 - t) + _SKY_LOW[0] * t)
+            g = int(_SKY[1] * (1 - t) + _SKY_LOW[1] * t)
+            b = int(_SKY[2] * (1 - t) + _SKY_LOW[2] * t)
+            pygame.draw.line(surf, (r, g, b), (0, y), (SCREEN_W, y))
+        surf.fill(_GRASS_OUT, (0, h, SCREEN_W, SCREEN_H - h))
         return surf
 
-    def _draw_stadium(self, surface):
-        # Upper bowl
-        pygame.draw.rect(surface, STADIUM_DEEP, (0, 0, SCREEN_W, HORIZON_Y - 48))
-        for i, y0 in enumerate(range(12, HORIZON_Y - 52, 14)):
-            t = i / max(1, (HORIZON_Y - 52) // 14)
-            col = (
-                int(STADIUM_DEEP[0] * (1 - t) + STADIUM_BAND[0] * t),
-                int(STADIUM_DEEP[1] * (1 - t) + STADIUM_BAND[1] * t),
-                int(STADIUM_DEEP[2] * (1 - t) + STADIUM_BAND[2] * t),
-            )
-            pygame.draw.line(surface, col, (0, y0), (SCREEN_W, y0), 3)
+    def _draw_crowd(self, surface: pygame.Surface):
+        # Simple colored band
+        pygame.draw.rect(surface, (45, 55, 100), (0, 0, SCREEN_W, HORIZON_Y - 50))
+        pygame.draw.rect(surface, (55, 70, 125), (0, HORIZON_Y - 50, SCREEN_W, 32))
+        pygame.draw.rect(surface, (70, 85, 145), (0, HORIZON_Y - 20, SCREEN_W, 10))
+        for cx, cy, col in self._crowd:
+            pygame.draw.circle(surface, col, (cx, cy), 3)
+            pygame.draw.circle(surface, (220, 215, 210), (cx, cy - 4), 2)
 
-        deck_h = 52
-        pygame.draw.rect(
-            surface, STADIUM_BAND,
-            pygame.Rect(0, HORIZON_Y - deck_h - 8, SCREEN_W, deck_h),
-        )
-        pygame.draw.rect(surface, STADIUM_RAIL, (0, HORIZON_Y - 14, SCREEN_W, 6))
+    def _draw_outfield(self, surface: pygame.Surface):
+        # Bright green outfield polygon
+        left_far  = _field_to_screen(-1.5, 0.02)
+        right_far = _field_to_screen( 1.5, 0.02)
+        left_near = (0,          PLATE_Y)
+        right_near= (SCREEN_W,   PLATE_Y)
+        pts = [left_far, right_far, right_near, left_near]
+        pygame.draw.polygon(surface, _GRASS_OUT, pts)
 
-        for (dx, dy) in self._seat_dots:
-            pygame.draw.circle(surface, (min(255, 180 + (dx % 40)), 200, 220), (dx, dy), 1)
-
-    def _draw_outfield_grass(self, surface):
-        pygame.draw.polygon(surface, FIELD_GREEN, self._outfield_pts)
-
-        lf = self._foul_left_far
-        rf = self._foul_right_far
-        lp = (PLATE_X - _RUNWAY_HALF_PLATE, PLATE_Y)
-        rp = (PLATE_X + _RUNWAY_HALF_PLATE, PLATE_Y)
-        lt = (PLATE_X - _RUNWAY_HALF_FAR - 4, _Y_RUNWAY_TOP)
-        rt = (PLATE_X + _RUNWAY_HALF_FAR + 4, _Y_RUNWAY_TOP)
-
-        pygame.draw.polygon(surface, GRASS_MID, [(0, PLATE_Y), lp, lt, lf, (0, HORIZON_Y + 8)])
-        pygame.draw.polygon(surface, GRASS_MID, [(SCREEN_W, PLATE_Y), rp, rt, rf, (SCREEN_W, HORIZON_Y + 8)])
-
-        # Tiered tone on wings
-        for i, col in enumerate((GRASS_LO, GRASS_HI)):
-            z0 = 0.12 + i * 0.22
-            z1 = z0 + 0.18
-            strip_l = [
-                _field_to_screen(-1.5, z0),
-                _field_to_screen(-0.32, z0),
-                _field_to_screen(-0.32, z1),
-                _field_to_screen(-1.5, z1),
-            ]
-            strip_r = [
-                _field_to_screen(1.5, z0),
-                _field_to_screen(0.32, z0),
-                _field_to_screen(0.32, z1),
-                _field_to_screen(1.5, z1),
-            ]
-            pygame.draw.polygon(surface, col, strip_l)
-            pygame.draw.polygon(surface, col, strip_r)
-
-    def _draw_warning_arc(self, surface):
-        pts = [
-            (PLATE_X - _HALF_FAR * 6, HORIZON_Y + 8),
-            (PLATE_X + _HALF_FAR * 6, HORIZON_Y + 8),
-            _field_to_screen(1.05, 0.12),
-            _field_to_screen(-1.05, 0.12),
-        ]
-        pygame.draw.polygon(surface, (165, 125, 72), pts)
-        pygame.draw.polygon(surface, (120, 88, 52), pts, 1)
-
-    def _draw_runway(self, surface):
-        y_top = _Y_RUNWAY_TOP
-        clay = [
-            (PLATE_X - _RUNWAY_HALF_PLATE, PLATE_Y),
-            (PLATE_X + _RUNWAY_HALF_PLATE, PLATE_Y),
-            (PLATE_X + _RUNWAY_HALF_FAR, y_top),
-            (PLATE_X - _RUNWAY_HALF_FAR, y_top),
-        ]
-        pygame.draw.polygon(surface, TRACK_TAN_MID, clay)
-        pygame.draw.polygon(surface, TRACK_TAN_DARK, clay, 2)
-
-        # Lighter spine down the middle (depth)
-        spine = [
-            (PLATE_X - 28, PLATE_Y - 2),
-            (PLATE_X + 28, PLATE_Y - 2),
-            (PLATE_X + 5, y_top + 4),
-            (PLATE_X - 5, y_top + 4),
-        ]
-        pygame.draw.polygon(surface, TRACK_TAN_LIGHT, spine)
-
-        for gx, gy in self._scuff_pts:
-            pygame.draw.circle(surface, TRACK_TAN_DARK, (gx, gy), 1)
-
-        self._draw_center_chalk(surface, y_top)
-
-    def _draw_center_chalk(self, surface, y_top):
-        n = 22
-        for i in range(n):
-            if i % 2 == 1:
-                continue
-            z = 0.08 + (i / n) * 0.88
-            px, py = _field_to_screen(0.0, z)
-            pygame.draw.circle(surface, CHALK_GLOW, (px, py), 2)
-            pygame.draw.circle(surface, WHITE, (px, py), 1)
-
-    def _draw_grass_stripes(self, surface):
-        for i in range(7):
-            z0 = 0.08 + i * 0.065
-            z1 = z0 + 0.034
-            col = FIELD_GREEN if i % 2 == 0 else FIELD_DARK
-            for sign in (-1, 1):
-                poly = [
-                    _field_to_screen(sign * 0.95, z0),
-                    _field_to_screen(sign * 0.38, z0),
-                    _field_to_screen(sign * 0.38, z1),
-                    _field_to_screen(sign * 0.95, z1),
+        # Mowing stripes
+        for i in range(8):
+            z0 = 0.04 + i * 0.12
+            z1 = z0  + 0.06
+            col = _GRASS_IN if i % 2 == 0 else _GRASS_OUT
+            for side in (-1, 1):
+                stripe = [
+                    _field_to_screen(side * 0.25, z0),
+                    _field_to_screen(side * 1.4,  z0),
+                    _field_to_screen(side * 1.4,  z1),
+                    _field_to_screen(side * 0.25, z1),
                 ]
-                pygame.draw.polygon(surface, col, poly)
+                pygame.draw.polygon(surface, col, stripe)
 
-    def _draw_foul_lines(self, surface):
-        chalk_w = 4
-        pygame.draw.line(surface, BASELINE_WHT, (PLATE_X, PLATE_Y), self._foul_left_far, chalk_w)
-        pygame.draw.line(surface, BASELINE_WHT, (PLATE_X, PLATE_Y), self._foul_right_far, chalk_w)
-        pygame.draw.line(surface, (210, 205, 190), (PLATE_X, PLATE_Y), self._foul_left_far, 1)
-        pygame.draw.line(surface, (210, 205, 190), (PLATE_X, PLATE_Y), self._foul_right_far, 1)
+    def _draw_infield_dirt(self, surface: pygame.Surface):
+        # Dirt diamond around the bases
+        hp  = (PLATE_X, PLATE_Y - 8)
+        b1  = _base_pos("1B")
+        b2  = _base_pos("2B")
+        b3  = _base_pos("3B")
 
-    def _draw_base_paths(self, surface):
-        b1 = _field_to_screen(0.55, 0.55)
-        b2 = _field_to_screen(0.0, 0.22)
-        b3 = _field_to_screen(-0.55, 0.55)
-        hp = (PLATE_X, PLATE_Y - 10)
-        c = (215, 210, 195)
-        pygame.draw.line(surface, c, hp, b1, 2)
-        pygame.draw.line(surface, c, b1, b2, 2)
-        pygame.draw.line(surface, c, b2, b3, 2)
-        pygame.draw.line(surface, c, b3, hp, 2)
+        # Expand each corner outward slightly for the dirt patch
+        def _expand(pt, cx, cy, amt=28):
+            dx, dy = pt[0] - cx, pt[1] - cy
+            d = math.hypot(dx, dy)
+            if d < 1:
+                return pt
+            return (int(pt[0] + dx / d * amt), int(pt[1] + dy / d * amt))
 
-    def _draw_bases(self, surface):
-        base_size = 12
-        for pos in [(0.55, 0.55), (0.0, 0.22), (-0.55, 0.55)]:
-            sx, sy = _field_to_screen(pos[0], pos[1])
-            scale = 0.45 + 0.55 * pos[1]
-            bs = max(4, int(base_size * scale))
-            rect = pygame.Rect(sx - bs // 2, sy - bs // 2, bs, bs)
-            pygame.draw.rect(surface, BASE_WHITE, rect)
-            pygame.draw.rect(surface, (165, 155, 130), rect, 1)
+        cx = (hp[0] + b1[0] + b2[0] + b3[0]) // 4
+        cy = (hp[1] + b1[1] + b2[1] + b3[1]) // 4
+        dirt_pts = [_expand(p, cx, cy) for p in [hp, b1, b2, b3]]
+        pygame.draw.polygon(surface, _DIRT, dirt_pts)
+        pygame.draw.polygon(surface, _DIRT_EDGE, dirt_pts, 3)
 
-    def _draw_mound(self, surface):
+    def _draw_base_paths(self, surface: pygame.Surface):
+        hp = (PLATE_X, PLATE_Y - 8)
+        b1 = _base_pos("1B")
+        b2 = _base_pos("2B")
+        b3 = _base_pos("3B")
+        for a, b in [(hp, b1), (b1, b2), (b2, b3), (b3, hp)]:
+            pygame.draw.line(surface, _CHALK, a, b, 4)
+            pygame.draw.line(surface, WHITE,  a, b, 2)
+
+    def _draw_bases(self, surface: pygame.Surface):
+        for name in ("1B", "2B", "3B"):
+            bx, by = _base_pos(name)
+            z = {"1B": 0.55, "2B": 0.22, "3B": 0.55}[name]
+            scale = 0.5 + 0.5 * z
+            sz = max(5, int(14 * scale))
+            rect = pygame.Rect(bx - sz // 2, by - sz // 2, sz, sz)
+            pygame.draw.rect(surface, _BASE_COL, rect, border_radius=2)
+            pygame.draw.rect(surface, (160, 152, 132), rect, 1, border_radius=2)
+
+    def _draw_mound(self, surface: pygame.Surface):
         mx, my = _field_to_screen(0.0, 0.40)
-        w, h = 52, 20
-        pygame.draw.ellipse(surface, (45, 85, 48), (mx - w // 2 - 4, my - h // 2 - 3, w + 8, h + 6))
-        pygame.draw.ellipse(surface, MOUND_TAN, (mx - w // 2, my - h // 2, w, h))
-        pygame.draw.ellipse(surface, (145, 112, 72), (mx - w // 2, my - h // 2, w, h), 2)
-        pygame.draw.rect(surface, WHITE, (mx - 7, my - 3, 14, 5))
-        pygame.draw.rect(surface, (200, 200, 200), (mx - 7, my - 3, 14, 5), 1)
+        pygame.draw.ellipse(surface, (55, 100, 55), (mx - 36, my - 14, 72, 28))
+        pygame.draw.ellipse(surface, _MOUND_COL,   (mx - 32, my - 12, 64, 24))
+        pygame.draw.rect(surface, WHITE,            (mx - 5,  my -  2, 10,  4))
 
-    def _draw_home_plate(self, surface):
-        hp_pts = [
-            (PLATE_X, PLATE_Y - 16),
-            (PLATE_X + 12, PLATE_Y - 9),
-            (PLATE_X + 12, PLATE_Y + 5),
-            (PLATE_X - 12, PLATE_Y + 5),
-            (PLATE_X - 12, PLATE_Y - 9),
+    def _draw_home_plate(self, surface: pygame.Surface):
+        pts = [
+            (PLATE_X,      PLATE_Y - 14),
+            (PLATE_X + 11, PLATE_Y -  8),
+            (PLATE_X + 11, PLATE_Y +  4),
+            (PLATE_X - 11, PLATE_Y +  4),
+            (PLATE_X - 11, PLATE_Y -  8),
         ]
-        pygame.draw.polygon(surface, WHITE, hp_pts)
-        pygame.draw.polygon(surface, (175, 168, 150), hp_pts, 2)
+        pygame.draw.polygon(surface, WHITE, pts)
+        pygame.draw.polygon(surface, (165, 155, 130), pts, 2)
 
-        for dx in (-34, 16):
-            pygame.draw.rect(
-                surface, (235, 225, 200),
-                (PLATE_X + dx, PLATE_Y - 24, 18, 32), 2,
-            )
+    def _draw_pitcher(self, surface: pygame.Surface):
+        px, py = _field_to_screen(0.0, 0.40)
+        py -= 16
+        _draw_google_character(surface, px, py, _HELMET_RED, _UNIFORM_W, scale=0.75)
 
-        # Catcher box dirt smudge
-        pygame.draw.ellipse(
-            surface, (TRACK_TAN_DARK[0], TRACK_TAN_DARK[1], TRACK_TAN_DARK[2]),
-            (PLATE_X - 70, PLATE_Y - 8, 140, 22), 1,
-        )
+    def _draw_batter(self, surface: pygame.Surface):
+        bx = PLATE_X + 28
+        by = PLATE_Y - 30
+        _draw_google_character(surface, bx, by, _HELMET_BLUE, _UNIFORM_G,
+                               scale=1.0, batting_stance=True)
 
-    def _draw_batter_from_behind(self, surface):
-        """Narrow silhouette — batter between you and the pitcher."""
-        leg_l = (PLATE_X - 22, PLATE_Y - 4)
-        leg_r = (PLATE_X + 22, PLATE_Y - 4)
-        pygame.draw.rect(surface, (28, 32, 38), (leg_l[0] - 9, leg_l[1] - 52, 16, 54), border_radius=4)
-        pygame.draw.rect(surface, (28, 32, 38), (leg_r[0] - 7, leg_r[1] - 52, 16, 54), border_radius=4)
-        pygame.draw.rect(surface, (40, 48, 56), (PLATE_X - 28, PLATE_Y - 118, 56, 62), border_radius=10)
-        pygame.draw.line(surface, (55, 40, 28), (PLATE_X - 40, PLATE_Y - 108), (PLATE_X + 50, PLATE_Y - 100), 5)
 
-    def _draw_catcher_vignette(self, surface):
-        v = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        for x in range(0, 120, 2):
-            a = int(70 * (1.0 - x / 120.0))
-            pygame.draw.line(v, (0, 0, 0, a), (x, PLATE_Y - 140), (x, SCREEN_H))
-        for x in range(0, 120, 2):
-            a = int(70 * (1.0 - x / 120.0))
-            pygame.draw.line(v, (0, 0, 0, a), (SCREEN_W - 1 - x, PLATE_Y - 140), (SCREEN_W - 1 - x, SCREEN_H))
-        pygame.draw.rect(v, (0, 0, 0, 55), (0, PLATE_Y + 8, SCREEN_W, SCREEN_H - PLATE_Y - 8))
-        surface.blit(v, (0, 0))
+def _draw_google_character(
+    surface: pygame.Surface,
+    cx: int, cy: int,
+    helmet_col: tuple,
+    shirt_col:  tuple,
+    scale: float = 1.0,
+    batting_stance: bool = False,
+):
+    """Google Baseball-style round cartoon character."""
+    s = max(0.5, scale)
 
-    def _make_outfield_arc(self) -> list:
-        return [
-            (0, HORIZON_Y + 4),
-            (0, PLATE_Y),
-            (SCREEN_W, PLATE_Y),
-            (SCREEN_W, HORIZON_Y + 4),
-        ]
+    head_r  = int(13 * s)
+    body_w  = int(18 * s)
+    body_h  = int(16 * s)
+    leg_w   = int(5  * s)
+    leg_h   = int(14 * s)
+    arm_w   = int(4  * s)
+
+    # shadow
+    sh = pygame.Surface((head_r * 4, head_r), pygame.SRCALPHA)
+    pygame.draw.ellipse(sh, (0, 0, 0, 45), sh.get_rect())
+    surface.blit(sh, (cx - head_r * 2, cy + body_h + leg_h // 2))
+
+    # legs
+    leg_col = _PANTS_GRY
+    if batting_stance:
+        pygame.draw.rect(surface, leg_col,
+                         (cx - body_w // 2 - 2, cy + body_h - 4, leg_w, leg_h + 4),
+                         border_radius=3)
+        pygame.draw.rect(surface, leg_col,
+                         (cx + body_w // 2 - leg_w + 2, cy + body_h - 4, leg_w, leg_h + 4),
+                         border_radius=3)
+    else:
+        pygame.draw.rect(surface, leg_col,
+                         (cx - leg_w - 2, cy + body_h - 4, leg_w, leg_h),
+                         border_radius=3)
+        pygame.draw.rect(surface, leg_col,
+                         (cx + 2, cy + body_h - 4, leg_w, leg_h),
+                         border_radius=3)
+
+    # body
+    body_rect = pygame.Rect(cx - body_w // 2, cy, body_w, body_h)
+    pygame.draw.rect(surface, shirt_col, body_rect, border_radius=4)
+    pygame.draw.rect(surface, (max(0, shirt_col[0] - 40),
+                               max(0, shirt_col[1] - 40),
+                               max(0, shirt_col[2] - 40)), body_rect, 1, border_radius=4)
+
+    # arms
+    if batting_stance:
+        # both arms holding bat (right side)
+        for oy in (-4, 2):
+            pygame.draw.rect(surface, shirt_col,
+                             (cx + body_w // 2, cy + body_h // 2 + oy, int(16 * s), arm_w),
+                             border_radius=2)
+        # bat
+        bat_x = cx + body_w // 2 + int(14 * s)
+        pygame.draw.line(surface, (120, 80, 40),
+                         (bat_x, cy - int(10 * s)), (bat_x + int(4 * s), cy + int(16 * s)), max(2, int(3 * s)))
+    else:
+        pygame.draw.rect(surface, shirt_col,
+                         (cx - body_w // 2 - int(14 * s), cy + int(4 * s), int(14 * s), arm_w),
+                         border_radius=2)
+        pygame.draw.rect(surface, shirt_col,
+                         (cx + body_w // 2, cy + int(4 * s), int(10 * s), arm_w),
+                         border_radius=2)
+
+    # head
+    pygame.draw.circle(surface, _SKIN, (cx, cy - head_r + 4), head_r)
+
+    # eyes
+    eye_r = max(2, int(2.5 * s))
+    pygame.draw.circle(surface, (30, 30, 80), (cx - int(4 * s), cy - head_r + 2), eye_r)
+    pygame.draw.circle(surface, (30, 30, 80), (cx + int(4 * s), cy - head_r + 2), eye_r)
+    pygame.draw.circle(surface, WHITE,         (cx - int(4 * s) + 1, cy - head_r + 1), max(1, eye_r - 1))
+    pygame.draw.circle(surface, WHITE,         (cx + int(4 * s) + 1, cy - head_r + 1), max(1, eye_r - 1))
+
+    # smile
+    smile_rect = pygame.Rect(cx - int(5 * s), cy - head_r + int(5 * s), int(10 * s), int(5 * s))
+    pygame.draw.arc(surface, (180, 80, 80), smile_rect, math.pi, math.pi * 2, max(1, int(1.5 * s)))
+
+    # helmet (flat cap style)
+    helmet_pts = [
+        (cx - head_r - int(2 * s), cy - head_r + int(4 * s)),
+        (cx + head_r,              cy - head_r + int(4 * s)),
+        (cx + head_r,              cy - head_r - int(2 * s)),
+        (cx,                       cy - head_r * 2 - int(2 * s)),
+        (cx - head_r - int(2 * s), cy - head_r),
+    ]
+    pygame.draw.polygon(surface, helmet_col, helmet_pts)
+    # brim
+    pygame.draw.line(surface, (max(0, helmet_col[0] - 30),
+                               max(0, helmet_col[1] - 30),
+                               max(0, helmet_col[2] - 30)),
+                     (cx - head_r - int(2 * s), cy - head_r + int(4 * s)),
+                     (cx + head_r + int(6 * s), cy - head_r + int(4 * s)),
+                     max(2, int(3 * s)))
