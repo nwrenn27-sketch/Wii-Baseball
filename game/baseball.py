@@ -24,7 +24,7 @@ import random
 
 from game.constants import (
     PITCH_TYPES,
-    PITCHER_DEPTH,
+    PITCHER_DEPTH_NORM as PITCHER_DEPTH,
     SCREEN_W,
     HORIZON_Y,
     PLATE_Y,

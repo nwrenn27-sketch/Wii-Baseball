@@ -243,6 +243,8 @@ class WiiBaseball:
         pt, tx, ty = self.pitcher.get_pitch()
         self.pitcher.on_released()
         self.ball.throw(pt, tx, ty)
+        self.hud.show_pitch_name(pt)
+        self.field.pitcher_pose = 'throwing'
         self.state = GameState.PITCHING
 
     def _on_outcome(self, outcome: str):
@@ -307,14 +309,23 @@ class WiiBaseball:
 
         elif self.state == GameState.WIND_UP:
             self.pitcher.update()
+            # Drive pitcher Mii animation
+            p = self.pitcher.wind_up_progress
+            self.field.pitcher_pose = 'wind_up' if p < 0.7 else 'throwing'
             if self.pitcher.is_ready_to_release():
                 self._on_pitch_released()
 
         elif self.state == GameState.PITCHING:
             self.ball.update()
+            # Pitcher returns to idle after releasing
+            self.field.pitcher_pose = 'idle'
+            # Batter swing animation fades quickly
+            if self.field.batter_swing > 0:
+                self.field.batter_swing = max(0.0, self.field.batter_swing - 0.06)
 
             if swing_fired and not self._swing_cooldown:
                 self._swing_cooldown = True
+                self.field.batter_swing = 1.0   # trigger batter swing pose
                 vel = (self.detector.swing_velocity
                        if self.detector else random.uniform(0.06, 0.10))
                 outcome = self.batter.resolve_swing(self.ball, vel)
@@ -365,11 +376,19 @@ class WiiBaseball:
             return
 
         # --- Playing field ---
-        self.field.draw(self.screen)
+        self.field.draw(self.screen,
+                        player_score=self.sb.player_score,
+                        cpu_score=self.sb.cpu_score,
+                        inning=self.sb.inning)
+
+        # Trajectory arc (first half of pitch flight)
+        if self.state == GameState.PITCHING:
+            pt, tx, ty = self.pitcher.get_pitch()
+            self.field.draw_trajectory_arc(self.screen, self.ball, tx, ty)
 
         # Strike zone hint (visible while pitching)
         if self.state == GameState.PITCHING:
-            zone_alpha = int(80 + 60 * (1.0 - self.ball.progress))
+            zone_alpha = int(90 + 50 * (1.0 - self.ball.progress))
             self.field.draw_strike_zone(self.screen, zone_alpha)
 
         # Ball
@@ -397,16 +416,14 @@ class WiiBaseball:
             self._render_kb_hint()
 
     def _render_wind_up_indicator(self):
-        """Show a subtle wind-up progress arc above the pitcher."""
-        font = pygame.font.SysFont("Arial", 20, bold=True)
+        """Subtle 'READY' / 'PITCHING' overlay above pitcher's head."""
+        font = pygame.font.SysFont("Arial", 18, bold=True)
         p    = self.pitcher.wind_up_progress
-        msgs = ["READY...", "SET...", "WINDING UP..."]
-        idx  = min(len(msgs) - 1, int(p * len(msgs)))
-        surf = font.render(msgs[idx], True, WII_YELLOW)
-
-        from game.constants import MOUND_Y, SCREEN_W
-        surface = self.screen
-        surface.blit(surf, surf.get_rect(center=(SCREEN_W // 2, MOUND_Y - 40)))
+        msg  = "PITCHING..." if p > 0.6 else "READY..."
+        txt  = font.render(msg, True, WII_YELLOW)
+        txt.set_alpha(int(180 * min(1.0, p * 2)))
+        from game.constants import MOUND_Y
+        self.screen.blit(txt, txt.get_rect(center=(SCREEN_W // 2, MOUND_Y - 95)))
 
         # Progress arc
         cx, cy = SCREEN_W // 2, MOUND_Y - 70
