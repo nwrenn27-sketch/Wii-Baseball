@@ -48,14 +48,14 @@ class Ball:
     x, y, z   : floats  current 3-D position
     """
 
-    RADIUS_FAR  = 2    # px at release (tiny in distance)
-    RADIUS_NEAR = 56   # px at plate — strong “ball at the mask” read
+    RADIUS_FAR  = 6    # px at release — easier to track out of the hand
+    RADIUS_NEAR = 58   # px at plate — strong “at the mask” read
 
     def __init__(self):
         self.pitch_type: str  = "fastball"
         self.active:     bool = False
         self.progress:   float = 0.0
-        self._trail: "deque[tuple[int, int, int]]" = deque(maxlen=14)
+        self._trail: "deque[tuple[int, int, int]]" = deque(maxlen=18)
 
         # 3-D position
         self.x: float = 0.0   # lateral (field units)
@@ -123,6 +123,12 @@ class Ball:
 
         self.x += self._vx
         self.y += self._vy
+        # Pull toward umpire-selected target so breaking balls still finish on the
+        # paint (otherwise accel drifts pitches far from intended nibble).
+        pull = 0.012 + 0.26 * ((1.0 - (self.z / PITCHER_DEPTH)) ** 2.4)
+        self.x += (self._target_x - self.x) * pull
+        self.y += (self._target_y - self.y) * pull
+
         self.z += self._vz   # z decreases toward 0
 
         # Progress: how much of the pitcher→plate distance has been covered
@@ -134,9 +140,9 @@ class Ball:
             self.z = 0.0
             self.active = False
             self.progress = 1.0
+            # Geographic strike zone at the plate (same rule as swing resolution)
             self.in_zone = (
-                abs(self.x - self._target_x) < STRIKE_ZONE_W and
-                abs(self.y - self._target_y) < STRIKE_ZONE_H
+                abs(self.x) < STRIKE_ZONE_W and abs(self.y) < STRIKE_ZONE_H
             )
 
         if self.active:

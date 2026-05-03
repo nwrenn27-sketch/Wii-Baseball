@@ -42,9 +42,9 @@ class Pitcher:
         pitcher.on_released()
     """
 
-    # How far outside the zone a "ball" pitch can wander
-    _BALL_MARGIN_X = 0.18
-    _BALL_MARGIN_Y = 0.12
+    # “Nibbles”: stay barely outside the zone (tight margins — hard takes)
+    _BALL_NIBBLE_X = 0.014
+    _BALL_NIBBLE_Y = 0.012
 
     # Max random jitter on a strike pitch
     _STRIKE_JITTER_X = 0.10
@@ -131,13 +131,21 @@ class Pitcher:
             tx = random.uniform(-STRIKE_ZONE_W * 0.7, STRIKE_ZONE_W * 0.7)
             ty = random.uniform(-STRIKE_ZONE_H * 0.6, STRIKE_ZONE_H * 0.6)
         else:
-            # Miss the zone intentionally
-            side = random.choice([-1, 1])
-            tx = side * (STRIKE_ZONE_W + random.uniform(0.04, self._BALL_MARGIN_X))
-            ty = random.uniform(
-                -STRIKE_ZONE_H - self._BALL_MARGIN_Y,
-                 STRIKE_ZONE_H + self._BALL_MARGIN_Y,
-            )
+            # Just miss — stay on the black (tiny margins past the box)
+            mode = random.choice(["paint_side", "paint_high_low", "clip_corner"])
+            if mode == "paint_side":
+                side = random.choice([-1, 1])
+                tx = side * (STRIKE_ZONE_W + random.uniform(0.001, self._BALL_NIBBLE_X))
+                ty = random.uniform(-STRIKE_ZONE_H * 0.55, STRIKE_ZONE_H * 0.55)
+            elif mode == "paint_high_low":
+                side_y = random.choice([-1, 1])
+                ty = side_y * (STRIKE_ZONE_H + random.uniform(0.001, self._BALL_NIBBLE_Y))
+                tx = random.uniform(-STRIKE_ZONE_W * 0.45, STRIKE_ZONE_W * 0.45)
+            else:
+                sx = random.choice([-1, 1])
+                sy = random.choice([-1, 1])
+                tx = sx * (STRIKE_ZONE_W + random.uniform(0.001, self._BALL_NIBBLE_X * 0.85))
+                ty = sy * (STRIKE_ZONE_H + random.uniform(0.001, self._BALL_NIBBLE_Y * 0.85))
 
         return pitch_type, tx, ty
 

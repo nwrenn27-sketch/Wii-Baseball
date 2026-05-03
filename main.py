@@ -52,6 +52,7 @@ from game.batter         import (OUTCOME_OUT, OUTCOME_HOME_RUN, OUTCOME_TRIPLE,
 from game.field          import FieldRenderer
 from game.hud            import HUD
 from game.menu           import MenuRenderer
+from game.runner_anim    import RunnerAnimator, draw_occupied_base_runners
 import game.sound        as sound
 
 # ---------------------------------------------------------------------------
@@ -146,9 +147,10 @@ class WiiBaseball:
             gc.INNINGS = args.innings
 
         # Renderers
-        self.field  = FieldRenderer()
-        self.hud    = HUD()
-        self.menu   = MenuRenderer()
+        self.field       = FieldRenderer()
+        self.hud         = HUD()
+        self.menu        = MenuRenderer()
+        self.runner_anim = RunnerAnimator()
 
         # State
         self.state           = GameState.MENU
@@ -168,9 +170,9 @@ class WiiBaseball:
 
     def run(self):
         while True:
-            dt = self.clock.tick(self.target_fps)
+            dt_ms = float(self.clock.tick(self.target_fps))
             self._process_events()
-            self._update()
+            self._update(dt_ms)
             self._render()
             pygame.display.flip()
 
@@ -231,6 +233,7 @@ class WiiBaseball:
             self.detector.start_calibration()
 
     def _begin_wind_up(self):
+        self.runner_anim.reset()
         self.state = GameState.WIND_UP
         self.ball.active = False
         self.pitcher.begin_wind_up(self.sb.at_bat.strikes, self.sb.at_bat.balls)
@@ -248,7 +251,15 @@ class WiiBaseball:
         play_outcome_sound(outcome)
         label    = self.sb.last_hit_label
         dur      = OUT_LABEL_DURATION_MS if outcome == OUTCOME_OUT else HIT_LABEL_DURATION_MS
-        self.hud.show_label(label, outcome, dur)
+        if outcome in (OUTCOME_STRIKE, OUTCOME_BALL):
+            dur = max(dur, 2800)
+        sub      = self.sb.call_subtitle
+        self.sb.call_subtitle = ""
+        self.hud.show_label(label, outcome, dur, sub)
+
+        if self.sb.pending_runner_paths:
+            self.runner_anim.start(self.sb.pending_runner_paths)
+            self.sb.pending_runner_paths = []
 
         if self.sb.game_over:
             self.state         = GameState.GAME_OVER
@@ -282,9 +293,10 @@ class WiiBaseball:
     # Update
     # ------------------------------------------------------------------
 
-    def _update(self):
+    def _update(self, dt_ms: float):
         self.menu.update()
         self.field.update()
+        self.runner_anim.update(dt_ms)
 
         # Webcam frame (always consume to keep buffer fresh)
         frame = read_frame(self.cap)
@@ -366,11 +378,22 @@ class WiiBaseball:
 
         # Strike zone hint (visible while pitching)
         if self.state == GameState.PITCHING:
-            zone_alpha = int(80 + 60 * (1.0 - self.ball.progress))
+            # Keep zone readable whole flight; brighten slightly as pitch arrives
+            zone_alpha = int(105 + 75 * (1.0 - self.ball.progress))
+            zone_alpha = min(220, zone_alpha)
             self.field.draw_strike_zone(self.screen, zone_alpha)
 
         # Ball
         self.field.draw_ball(self.screen, self.ball)
+
+        # Runners standing on bases (hide while hit-replay animation is playing)
+        if self.state in (GameState.WIND_UP, GameState.PITCHING):
+            draw_occupied_base_runners(self.screen, self.sb.runners)
+        elif self.state == GameState.RESULT and not self.runner_anim.active:
+            draw_occupied_base_runners(self.screen, self.sb.runners)
+
+        # Runner animation (after hits, during RESULT)
+        self.runner_anim.draw(self.screen)
 
         # Pitcher wind-up indicator
         if self.state == GameState.WIND_UP:

@@ -65,6 +65,9 @@ class Scoreboard:
     game_over:    bool       = False
     last_outcome: str        = ""
     last_hit_label: str      = ""
+    call_subtitle: str       = ""   # extra line for STRIKE/BALL clarity
+    # list of polylines [[(x,y),...], ...] consumed by RunnerAnimator after hits
+    pending_runner_paths: list = field(default_factory=list)
 
 
 class Batter:
@@ -103,14 +106,20 @@ class Batter:
 
         # ------ Miss: swing too early or ball not contactable ------
         if timing_error > HIT_LATE_WINDOW:
-            return self._apply_strike(OUTCOME_STRIKE)
+            return self._apply_strike(
+                OUTCOME_STRIKE,
+                "Swing was too early or too late — no contact",
+            )
 
         # ------ Ball outside zone entirely ------
         if not in_zone and timing_error > HIT_GOOD_WINDOW:
             # Foul tip is still possible on edge pitches
             if timing_error < HIT_LATE_WINDOW * 1.3 and random.random() < 0.3:
                 return self._apply_foul()
-            return self._apply_strike(OUTCOME_STRIKE)
+            return self._apply_strike(
+                OUTCOME_STRIKE,
+                "Pitch was outside the zone — strike on the swing",
+            )
 
         # ------ Contact (ball at least near plate) ------
         if timing_error < HIT_PERFECT_WINDOW:
@@ -121,7 +130,10 @@ class Batter:
             # Late/early but still made contact
             if random.random() < 0.55:
                 return self._apply_foul()
-            return self._apply_strike(OUTCOME_STRIKE)
+            return self._apply_strike(
+                OUTCOME_STRIKE,
+                "Weak contact — counted as a strike",
+            )
 
         return self._apply_hit(outcome)
 
@@ -131,9 +143,12 @@ class Batter:
         Returns OUTCOME_STRIKE or OUTCOME_BALL.
         """
         if ball.in_zone:
-            return self._apply_strike(OUTCOME_STRIKE)
+            return self._apply_strike(
+                OUTCOME_STRIKE,
+                "Pitch crossed inside the strike zone",
+            )
         else:
-            return self._apply_ball()
+            return self._apply_ball("Pitch missed outside the strike zone")
 
     # ------------------------------------------------------------------
     # Internal outcome helpers
@@ -166,6 +181,8 @@ class Batter:
     def _apply_hit(self, outcome: str) -> str:
         self.sb.last_outcome   = outcome
         self.sb.last_hit_label = self._label(outcome)
+        self.sb.call_subtitle  = ""
+        self.sb.pending_runner_paths = []
 
         if outcome == OUTCOME_FOUL:
             return self._apply_foul()
@@ -177,6 +194,7 @@ class Batter:
             OUTCOME_HOME_RUN: 4,
         }[outcome]
 
+        self.sb.pending_runner_paths = self._runner_paths_for_hit(bases_advanced)
         runs = self._advance_runners(bases_advanced)
         self.sb.player_score += runs
 
@@ -185,10 +203,11 @@ class Batter:
         self._check_game_over()
         return outcome
 
-    def _apply_strike(self, outcome: str) -> str:
+    def _apply_strike(self, outcome: str, subtitle: str = "") -> str:
         self.sb.at_bat.strikes += 1
         self.sb.last_outcome   = outcome
         self.sb.last_hit_label = "STRIKE"
+        self.sb.call_subtitle   = subtitle
         if self.sb.at_bat.strikes >= 3:
             return self._apply_out()
         return outcome
@@ -199,12 +218,14 @@ class Batter:
             self.sb.at_bat.strikes += 1
         self.sb.last_outcome   = OUTCOME_FOUL
         self.sb.last_hit_label = "FOUL"
+        self.sb.call_subtitle   = ""
         return OUTCOME_FOUL
 
-    def _apply_ball(self) -> str:
+    def _apply_ball(self, subtitle: str = "") -> str:
         self.sb.at_bat.balls += 1
         self.sb.last_outcome  = OUTCOME_BALL
         self.sb.last_hit_label = "BALL"
+        self.sb.call_subtitle  = subtitle or "Pitch was outside the strike zone"
         if self.sb.at_bat.balls >= 4:
             # Walk: batter takes 1B, force advance runners
             self._apply_walk()
@@ -216,6 +237,7 @@ class Batter:
         self.sb.at_bat = AtBat()
         self.sb.last_outcome   = OUTCOME_OUT
         self.sb.last_hit_label = "OUT"
+        self.sb.call_subtitle   = ""
         if self.sb.outs >= 3:
             self._end_half_inning()
         self._check_game_over()
@@ -223,6 +245,7 @@ class Batter:
 
     def _apply_walk(self):
         self.sb.last_hit_label = "WALK"
+        self.sb.call_subtitle  = "Four balls — take your base"
         # Push runners along: batter to 1B, chain force plays
         force = True
         new_runners = list(self.sb.runners)
@@ -243,6 +266,19 @@ class Batter:
         self.sb.runners      = new_runners
         self.sb.player_score += runs
         self.sb.at_bat        = AtBat()
+
+    def _runner_paths_for_hit(self, bases: int):
+        """Screen polylines for each moving runner + batter (for animation)."""
+        from game.runner_anim import build_runner_path_pixels
+
+        old = list(self.sb.runners)
+        paths = []
+        for base_idx in range(2, -1, -1):
+            if old[base_idx]:
+                start_leg = base_idx + 1  # sb.runners[0] = runner on 1B → leg 1
+                paths.append(build_runner_path_pixels(start_leg, bases))
+        paths.append(build_runner_path_pixels(0, bases))
+        return paths
 
     def _advance_runners(self, bases: int) -> int:
         """Move all runners forward by `bases`.  Returns number of runs scored."""

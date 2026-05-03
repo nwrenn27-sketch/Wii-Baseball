@@ -52,8 +52,8 @@ _LABEL_COLOURS = {
     OUTCOME_SINGLE:   ( 80, 220,  80),
     OUTCOME_FOUL:     (255, 180,  40),
     OUTCOME_OUT:      (220,  60,  60),
-    OUTCOME_STRIKE:   (220,  60,  60),
-    OUTCOME_BALL:     (200, 200, 200),
+    OUTCOME_STRIKE:   (255,  55,  55),
+    OUTCOME_BALL:     ( 70, 210, 255),
     OUTCOME_WALK:     (120, 255, 120),
 }
 
@@ -65,9 +65,11 @@ class HUD:
         self._font_md  = pygame.font.SysFont("Arial", 22, bold=True)
         self._font_lg  = pygame.font.SysFont("Arial", 38, bold=True)
         self._font_xl  = pygame.font.SysFont("Arial", 64, bold=True)
+        self._font_xxl = pygame.font.SysFont("Arial", 86, bold=True)
         self._font_cnt = pygame.font.SysFont("Arial", 28, bold=True)
 
         self._hit_label:    str   = ""
+        self._hit_subtitle: str  = ""
         self._hit_color:    tuple = WHITE
         self._hit_start_ms: float = 0.0
         self._hit_duration: float = HIT_LABEL_DURATION_MS
@@ -89,11 +91,13 @@ class HUD:
     # Public API
     # ------------------------------------------------------------------
 
-    def show_label(self, label: str, outcome: str = "", duration_ms: float = 0):
-        self._hit_label    = label
-        self._hit_color    = _LABEL_COLOURS.get(outcome, WHITE)
-        self._hit_start_ms = time.time() * 1000.0
-        self._hit_duration = duration_ms or HIT_LABEL_DURATION_MS
+    def show_label(self, label: str, outcome: str = "", duration_ms: float = 0,
+                   subtitle: str = ""):
+        self._hit_label     = label
+        self._hit_subtitle  = subtitle or ""
+        self._hit_color     = _LABEL_COLOURS.get(outcome, WHITE)
+        self._hit_start_ms  = time.time() * 1000.0
+        self._hit_duration  = duration_ms or HIT_LABEL_DURATION_MS
 
     def draw(self, surface: pygame.Surface, sb: Scoreboard,
              current_pitch_type: str, swing_detector=None):
@@ -281,6 +285,7 @@ class HUD:
         elapsed = now_ms - self._hit_start_ms
         if elapsed > self._hit_duration:
             self._hit_label = ""
+            self._hit_subtitle = ""
             return
 
         # Fade out in last 400 ms
@@ -296,7 +301,9 @@ class HUD:
         elif elapsed < 300:
             scale = 1.15 - 0.15 * ((elapsed - 150) / 150)
 
-        txt_surf = self._font_xl.render(self._hit_label, True, self._hit_color)
+        cx = SCREEN_W // 2
+        main_font = self._font_xxl if self._hit_label in ("STRIKE", "BALL") else self._font_xl
+        txt_surf = main_font.render(self._hit_label, True, self._hit_color)
 
         if scale != 1.0:
             new_size = (int(txt_surf.get_width() * scale),
@@ -304,17 +311,28 @@ class HUD:
             txt_surf = pygame.transform.scale(txt_surf, new_size)
 
         txt_surf.set_alpha(alpha)
-        cx = SCREEN_W // 2
-        cy = SCREEN_H // 2 - 60
+        cy = SCREEN_H // 2 - 80 if self._hit_subtitle else SCREEN_H // 2 - 60
         rect = txt_surf.get_rect(center=(cx, cy))
-        surface.blit(txt_surf, rect)
+        # Panel behind STRIKE/BALL for contrast on busy field
+        if self._hit_label in ("STRIKE", "BALL"):
+            pad = pygame.Rect(rect).inflate(36, 22)
+            bg = pygame.Surface((pad.w, pad.h), pygame.SRCALPHA)
+            bg.fill((8, 10, 18, min(200, alpha * 4 // 5)))
+            pygame.draw.rect(bg, (255, 255, 255, min(120, alpha // 2)), bg.get_rect(), 3, border_radius=12)
+            surface.blit(bg, pad.topleft)
 
-        # Drop shadow
-        shadow = self._font_xl.render(self._hit_label, True, BLACK)
+        shadow = main_font.render(self._hit_label, True, BLACK)
         if scale != 1.0:
             shadow = pygame.transform.scale(shadow, (txt_surf.get_width(), txt_surf.get_height()))
         shadow.set_alpha(alpha // 2)
-        surface.blit(shadow, (rect.x + 3, rect.y + 3))
+        surface.blit(shadow, (rect.x + 4, rect.y + 4))
+        surface.blit(txt_surf, rect)
+
+        if self._hit_subtitle:
+            sub = self._font_md.render(self._hit_subtitle, True, WII_GRAY)
+            sub.set_alpha(alpha)
+            srect = sub.get_rect(center=(cx, rect.bottom + 22))
+            surface.blit(sub, srect)
 
     @staticmethod
     def _blit_label(surf, text, font, pos, color, anchor="center"):

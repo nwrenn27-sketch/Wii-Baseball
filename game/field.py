@@ -130,20 +130,21 @@ class FieldRenderer:
         sx, sy = ball.get_screen_pos()
         r = ball.get_radius()
 
-        # Motion trail (older samples = smaller / more transparent)
+        # Motion trail (brighter so path reads against grass / sky)
         trail = list(ball._trail)
         if len(trail) >= 2:
             for i, (tx, ty, tr) in enumerate(trail):
                 if (tx, ty) == (sx, sy) and i == len(trail) - 1:
                     continue
                 age = (i + 1) / max(len(trail), 1)
-                alpha = int(55 * age)
-                rr = max(2, int(tr * (0.35 + 0.45 * age)))
-                if alpha < 8:
+                alpha = int(28 + 95 * age)
+                rr = max(2, int(tr * (0.42 + 0.48 * age)))
+                if alpha < 10:
                     continue
-                ts = pygame.Surface((rr * 2 + 2, rr * 2 + 2), pygame.SRCALPHA)
-                pygame.draw.circle(ts, (255, 255, 250, alpha), (rr + 1, rr + 1), rr)
-                surface.blit(ts, (tx - rr - 1, ty - rr - 1))
+                ts = pygame.Surface((rr * 2 + 4, rr * 2 + 4), pygame.SRCALPHA)
+                pygame.draw.circle(ts, (255, 255, 255, alpha // 5), (rr + 2, rr + 2), rr + 1)
+                pygame.draw.circle(ts, (255, 252, 235, alpha), (rr + 2, rr + 2), rr)
+                surface.blit(ts, (tx - rr - 2, ty - rr - 2))
 
         shx, shy = ball.get_shadow_pos()
         shadow_r = max(2, int(r * (0.42 + 0.2 * (1.0 - ball.progress))))
@@ -154,28 +155,32 @@ class FieldRenderer:
         )
         surface.blit(shadow_surf, (shx - shadow_r, shy - shadow_r // 2))
 
-        # Specular highlight + core
+        # High-contrast rings so the ball separates from any background
+        for ring_r, col, w in ((r + 5, (0, 0, 0), 3), (r + 2, (255, 255, 255), 2)):
+            pygame.draw.circle(surface, col, (sx, sy), ring_r, w)
+
         if r >= 5:
             glow = pygame.Surface((r * 6, r * 6), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (255, 255, 255, 35), (r * 3, r * 3), int(r * 2.2))
+            pygame.draw.circle(glow, (255, 255, 255, 55), (r * 3, r * 3), int(r * 2.35))
             surface.blit(glow, (sx - r * 3, sy - r * 3))
 
         pygame.draw.circle(surface, (235, 232, 220), (sx, sy), r)
         pygame.draw.circle(surface, BALL_WHITE, (sx - max(1, r // 8), sy - max(1, r // 8)), max(2, r - 2))
 
         if r >= 6:
+            seam_w = max(2, r // 4)
             pygame.draw.arc(
                 surface, BALL_SEAM,
                 (sx - r + 2, sy - r, r, r * 2),
-                math.pi * 0.2, math.pi * 0.8, max(1, r // 5),
+                math.pi * 0.2, math.pi * 0.8, seam_w,
             )
             pygame.draw.arc(
                 surface, BALL_SEAM,
                 (sx + 2, sy - r, r, r * 2),
-                math.pi * 1.2, math.pi * 1.8, max(1, r // 5),
+                math.pi * 1.2, math.pi * 1.8, seam_w,
             )
 
-        pygame.draw.circle(surface, (160, 155, 145), (sx, sy), r, 1)
+        pygame.draw.circle(surface, (40, 40, 48), (sx, sy), r, 2)
 
     def draw_strike_zone(self, surface: pygame.Surface, alpha: int = 120):
         from game.constants import STRIKE_ZONE_W, STRIKE_ZONE_H
@@ -189,10 +194,31 @@ class FieldRenderer:
         zone_surf = pygame.Surface((zone_w, zone_h), pygame.SRCALPHA)
         for y in range(zone_h):
             k = y / max(zone_h, 1)
-            a = int((alpha // 4) * (0.35 + 0.65 * k))
-            pygame.draw.line(zone_surf, (255, 255, 255, a), (0, y), (zone_w, y))
-        pygame.draw.rect(zone_surf, (255, 255, 255, min(200, alpha + 40)), zone_surf.get_rect(), 2)
+            a = int((alpha // 3) * (0.45 + 0.55 * k))
+            pygame.draw.line(zone_surf, (240, 255, 250, a), (0, y), (zone_w, y))
+        pygame.draw.rect(
+            zone_surf, (255, 255, 255, min(220, alpha + 55)), zone_surf.get_rect(), 3, border_radius=4,
+        )
         surface.blit(zone_surf, zone_rect.topleft)
+
+        # Umpire-style red corner brackets (inside vs outside the zone)
+        brk = min(18, max(10, zone_w // 5))
+        thick = 4
+        cr = (255, 60, 60)
+        x0, y0 = zone_rect.left, zone_rect.top
+        x1, y1 = zone_rect.right - 1, zone_rect.bottom - 1
+        # top-left
+        pygame.draw.line(surface, cr, (x0, y0), (x0 + brk, y0), thick)
+        pygame.draw.line(surface, cr, (x0, y0), (x0, y0 + brk), thick)
+        # top-right
+        pygame.draw.line(surface, cr, (x1, y0), (x1 - brk, y0), thick)
+        pygame.draw.line(surface, cr, (x1, y0), (x1, y0 + brk), thick)
+        # bottom-left
+        pygame.draw.line(surface, cr, (x0, y1), (x0 + brk, y1), thick)
+        pygame.draw.line(surface, cr, (x0, y1), (x0, y1 - brk), thick)
+        # bottom-right
+        pygame.draw.line(surface, cr, (x1, y1), (x1 - brk, y1), thick)
+        pygame.draw.line(surface, cr, (x1, y1), (x1, y1 - brk), thick)
 
     # ------------------------------------------------------------------
     # Layers
