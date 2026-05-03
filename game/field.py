@@ -1,38 +1,3 @@
-"""
-Wii Baseball field renderer.
-
-Visual layout matches the real Wii Sports Baseball camera angle:
-  - Camera directly behind home plate, elevated ~10 degrees
-  - Full diamond visible: HP at bottom-centre, 2B at upper-centre
-  - Pitcher Mii visible on mound with animated wind-up / throw
-  - Batter Mii visible at bottom (right-handed stance)
-  - Bleachers wrap around outfield; scoreboard on centre-field wall
-  - Alternating mowing stripes on outfield grass
-  - Trajectory arc dots show where pitch will cross the plate
-  - Ball grows with perspective; shadow on ground
-
-Drawing order (back → front):
-  1  sky gradient
-  2  clouds
-  3  bleachers / stands
-  4  outfield green (striped)
-  5  outfield wall
-  6  scoreboard (centre field)
-  7  warning track
-  8  infield dirt diamond
-  9  foul lines
-  10 base paths + bases
-  11 pitcher's mound + rubber
-  12 home plate
-  13 pitcher Mii
-  14 batter Mii
-  15 ball + shadow        ← called separately by main loop
-  16 strike-zone overlay  ← called separately
-
-# TODO: reuse _draw_mii() for Tennis player sprites
-# TODO: reuse _field_to_screen() for Bowling lane projection
-"""
-
 import math
 import random
 import pygame
@@ -42,7 +7,6 @@ from game.constants import (
     HORIZON_Y, PLATE_Y, PLATE_X,
     FIELD_WIDTH_NEAR, FIELD_WIDTH_FAR,
     PITCHER_DEPTH_NORM, MOUND_Y,
-    # colours
     WHITE, BLACK,
     SKY_TOP, SKY_BOT, CLOUD_WHITE,
     FIELD_GREEN, FIELD_DARK, FIELD_LITE,

@@ -1,17 +1,3 @@
-"""
-Menu screens for Wii Baseball.
-
-Screens implemented
--------------------
-  draw_start_menu()       – title screen, waits for SPACE / Enter
-  draw_half_inning()      – "Change sides" between innings
-  draw_game_over()        – final score + win/loss message + restart prompt
-
-All screens use Wii Sports-inspired rounded panels and a blue gradient bg.
-
-# TODO: Add sport-select hub screen (Baseball, Tennis, Bowling, Boxing)
-"""
-
 import math
 import pygame
 

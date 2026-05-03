@@ -1,32 +1,3 @@
-"""
-Wii Baseball — main entry point.
-
-State machine
--------------
-  MENU          → wait for SPACE/ENTER
-  CALIBRATION   → collect mediapipe wrist samples for CALIB_FRAMES frames
-  WIND_UP       → pitcher animation; transition to PITCHING when ready
-  PITCHING      → ball in flight; detect swing or wait for ball to cross plate
-  RESULT        → display outcome label; pause briefly, then loop back
-  HALF_INNING   → 3 outs reached; show between-innings screen
-  GAME_OVER     → final score; SPACE restarts, ESC quits
-
-Camera note
------------
-If no webcam is found, the game falls back to keyboard-only mode:
-  SPACE = swing (with random timing jitter for variety)
-
-Performance
------------
-Webcam processing runs at the game FPS.  MediaPipe is kept at its default
-threading model which is adequate for 60 FPS on modern hardware.
-To reduce CPU use, pass --low-fps on the command line for 30 FPS mode.
-
-Usage
------
-  python main.py [--low-fps] [--no-camera] [--fullscreen] [--innings N]
-"""
-
 import sys
 import argparse
 import random
@@ -35,7 +6,6 @@ import time
 import cv2
 import pygame
 
-# -- Local modules ----------------------------------------------------------
 from game.constants import (
     SCREEN_W, SCREEN_H, FPS, TITLE, INNINGS,
     CALIB_FRAMES, WIND_UP_MS, PITCH_RELEASE_DELAY_MS,

@@ -1,19 +1,3 @@
-"""
-HUD for Wii Baseball — styled to match Wii Sports Baseball's UI.
-
-Layout mirrors the real game:
-  ┌─────────────────────────────────────────────────────────────┐
-  │  [PITCH label top-left]    [B•• S•• O••  centre]  [INN top-right] │
-  └─────────────────────────────────────────────────────────────┘
-
-  Runners-on-base diamond  (bottom-left)
-  Hit result label          (centre, large animated pop)
-  Webcam overlay            (bottom-right corner)
-
-All panels use white rounded rectangles with subtle drop-shadow,
-matching the Wii Sports aesthetic.
-"""
-
 from typing import Optional
 import math
 import time

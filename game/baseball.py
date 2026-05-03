@@ -1,190 +1,83 @@
-"""
-Ball physics for Wii Baseball.
-
-Coordinate system (3-D field space)
-------------------------------------
-  x  : lateral offset from centre (metres, positive = right from batter POV)
-  y  : vertical offset from strike-zone centre (positive = up)
-  z  : depth from home plate toward outfield (0 = home plate, 1 = pitcher mound,
-       values > 1 continue to outfield)
-
-The ball starts at z=PITCHER_DEPTH (≈0.60) and travels toward z=0.
-Progress (float 0→1) tracks how far the ball has moved from its starting depth
-to home plate (progress=1.0 means the ball is at z=0, over the plate).
-
-Screen projection
------------------
-`get_screen_pos()` converts (x, y, z) to pixel coordinates using a simple
-perspective transform anchored at HORIZON_Y (vanishing point) and PLATE_Y
-(home plate).  Ball radius also scales with depth so it grows as it approaches.
-"""
-
 import math
-import random
 
 from game.constants import (
     PITCH_TYPES,
     PITCHER_DEPTH_NORM as PITCHER_DEPTH,
-    SCREEN_W,
-    HORIZON_Y,
-    PLATE_Y,
-    FIELD_WIDTH_NEAR,
-    FIELD_WIDTH_FAR,
-    STRIKE_ZONE_W,
-    STRIKE_ZONE_H,
+    SCREEN_W, HORIZON_Y, PLATE_Y,
+    FIELD_WIDTH_NEAR, FIELD_WIDTH_FAR,
+    STRIKE_ZONE_W, STRIKE_ZONE_H,
 )
+
+_HALF_SCALE = max(STRIKE_ZONE_W * 3, 0.001)
 
 
 class Ball:
-    """
-    A pitched baseball.
-
-    Attributes exposed for game logic
-    ----------------------------------
-    progress  : float   0 = just left pitcher's hand, 1 = arrived at plate
-    active    : bool    True while the ball is in flight
-    in_zone   : bool    True when the ball is in the strike zone at progress=1
-    x, y, z   : floats  current 3-D position
-    """
-
-    RADIUS_FAR  = 4   # px when at pitcher depth
-    RADIUS_NEAR = 18  # px when at home plate
+    RADIUS_FAR  = 4
+    RADIUS_NEAR = 18
 
     def __init__(self):
-        self.pitch_type: str  = "fastball"
-        self.active:     bool = False
-        self.progress:   float = 0.0
-
-        # 3-D position
-        self.x: float = 0.0   # lateral (field units)
-        self.y: float = 0.0   # vertical
-        self.z: float = PITCHER_DEPTH
-
-        # Accumulated velocity components (applied each frame)
-        self._vx: float = 0.0
-        self._vy: float = 0.0
-        self._vz: float = 0.0   # always negative (toward plate)
-
-        # Target landing spot (determines in_zone)
-        self._target_x: float = 0.0
-        self._target_y: float = 0.0
-
-        self.in_zone: bool = False
-
-    # ------------------------------------------------------------------
-    # Launch
-    # ------------------------------------------------------------------
+        self.pitch_type = "fastball"
+        self.active     = False
+        self.progress   = 0.0
+        self.x = self.y = 0.0
+        self.z = PITCHER_DEPTH
+        self._vx = self._vy = self._vz = 0.0
+        self._target_x = self._target_y = 0.0
+        self.in_zone = False
 
     def throw(self, pitch_type: str, target_x: float = 0.0, target_y: float = 0.0):
-        """
-        Initialise a new pitch.
-
-        Parameters
-        ----------
-        pitch_type : key from PITCH_TYPES
-        target_x   : desired plate crossing X (field units, ±STRIKE_ZONE_W is in zone)
-        target_y   : desired plate crossing Y (field units, ±STRIKE_ZONE_H is in zone)
-        """
         self.pitch_type = pitch_type
         self.active     = True
         self.progress   = 0.0
         self.in_zone    = False
         self._target_x  = target_x
         self._target_y  = target_y
-
         pd = PITCH_TYPES[pitch_type]
-        self._speed  = pd["speed"]
-        self._xa     = pd["x_accel"]
-        self._ya     = pd["y_accel"]
-
-        # Start at pitcher's mound, centred
-        self.z  = PITCHER_DEPTH
-        self.x  = 0.0
-        self.y  = 0.08   # slight height above plate level (release height)
-        self._vx = 0.0
-        self._vy = 0.0
-        self._vz = -self._speed   # moving toward plate (z decreases)
-
-    # ------------------------------------------------------------------
-    # Update (called every frame)
-    # ------------------------------------------------------------------
+        self._xa  = pd["x_accel"]
+        self._ya  = pd["y_accel"]
+        self.z    = PITCHER_DEPTH
+        self.x    = 0.0
+        self.y    = 0.08
+        self._vx  = self._vy = 0.0
+        self._vz  = -pd["speed"]
 
     def update(self):
-        """Advance ball by one frame.  No-op if not active."""
         if not self.active:
             return
-
-        # Accumulate acceleration
         self._vx += self._xa
         self._vy += self._ya
-
-        self.x += self._vx
-        self.y += self._vy
-        self.z += self._vz   # z decreases toward 0
-
-        # Progress: how much of the pitcher→plate distance has been covered
-        self.progress = 1.0 - (self.z / PITCHER_DEPTH)
-        self.progress = max(0.0, min(1.0, self.progress))
-
-        # Ball has crossed home plate
+        self.x   += self._vx
+        self.y   += self._vy
+        self.z   += self._vz
+        self.progress = max(0.0, min(1.0, 1.0 - self.z / PITCHER_DEPTH))
         if self.z <= 0.0:
             self.z = 0.0
-            self.active = False
+            self.active  = False
             self.progress = 1.0
             self.in_zone = (
                 abs(self.x - self._target_x) < STRIKE_ZONE_W and
                 abs(self.y - self._target_y) < STRIKE_ZONE_H
             )
 
-    # ------------------------------------------------------------------
-    # Screen projection
-    # ------------------------------------------------------------------
+    def _scale(self):
+        t = self.z / PITCHER_DEPTH
+        half_w = (FIELD_WIDTH_FAR / 2) + (FIELD_WIDTH_NEAR / 2 - FIELD_WIDTH_FAR / 2) * t
+        return half_w / _HALF_SCALE, t
 
     def get_screen_pos(self) -> tuple[int, int]:
-        """
-        Return (screen_x, screen_y) for the current ball position.
-
-        Perspective: the field contracts linearly from FIELD_WIDTH_NEAR at
-        PLATE_Y to FIELD_WIDTH_FAR at HORIZON_Y.  We interpolate along z.
-        """
-        t = self.z / PITCHER_DEPTH   # 1 = pitcher, 0 = plate
-        # Vertical position on screen
-        screen_y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t))
-
-        # Horizontal scale at this depth
-        half_w = (FIELD_WIDTH_FAR / 2) + (FIELD_WIDTH_NEAR / 2 - FIELD_WIDTH_FAR / 2) * t
-        scale  = half_w / max(STRIKE_ZONE_W * 3, 0.001)
-
-        screen_x = int(SCREEN_W // 2 + self.x * scale)
-
-        # Vertical: positive y = up = smaller screen_y
-        screen_y -= int(self.y * scale * 0.6)
-
-        return screen_x, screen_y
+        scale, t = self._scale()
+        sx = int(SCREEN_W // 2 + self.x * scale)
+        sy = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t))
+        sy -= int(self.y * scale * 0.6)
+        return sx, sy
 
     def get_radius(self) -> int:
-        """Ball pixel radius, grows as ball approaches camera."""
         t = max(0.0, min(1.0, self.z / PITCHER_DEPTH))
-        r = self.RADIUS_FAR + (self.RADIUS_NEAR - self.RADIUS_FAR) * (1.0 - t)
-        return max(2, int(r))
+        return max(2, int(self.RADIUS_FAR + (self.RADIUS_NEAR - self.RADIUS_FAR) * (1.0 - t)))
 
     def get_shadow_pos(self) -> tuple[int, int]:
-        """Shadow on the ground directly below the ball."""
-        t = self.z / PITCHER_DEPTH
-        screen_y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t))
-        screen_x = int(SCREEN_W // 2 + self.x * (
-            (FIELD_WIDTH_FAR / 2 + (FIELD_WIDTH_NEAR / 2 - FIELD_WIDTH_FAR / 2) * t)
-            / max(STRIKE_ZONE_W * 3, 0.001)
-        ))
-        return screen_x, screen_y
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def is_in_strike_zone_now(self) -> bool:
-        """True when ball is within the strike zone (useful during flight)."""
+        scale, t = self._scale()
         return (
-            abs(self.x) < STRIKE_ZONE_W and
-            abs(self.y) < STRIKE_ZONE_H
+            int(SCREEN_W // 2 + self.x * scale),
+            int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t)),
         )
