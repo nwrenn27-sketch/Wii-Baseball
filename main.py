@@ -35,6 +35,7 @@ def parse_args():
     p.add_argument("--no-camera",  action="store_true", help="Keyboard-only (no webcam)")
     p.add_argument("--fullscreen", action="store_true", help="Fullscreen mode")
     p.add_argument("--innings",    type=int, default=INNINGS, help="Number of innings")
+    p.add_argument("--camera",     type=int, default=-1,      help="Camera index (default: auto)")
     return p.parse_args()
 
 
@@ -42,17 +43,35 @@ def parse_args():
 # Camera helpers
 # ---------------------------------------------------------------------------
 
-def open_camera(no_camera: bool):
-    """Try to open the first available webcam.  Returns (cap, available)."""
+def open_camera(no_camera: bool, camera_index: int = -1):
     if no_camera:
         return None, False
-    cap = cv2.VideoCapture(0)
-    if cap.isOpened():
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS,          30)
-        return cap, True
-    return None, False
+
+    def _try(idx):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS,          30)
+            return cap
+        cap.release()
+        return None
+
+    if camera_index >= 0:
+        cap = _try(camera_index)
+        return (cap, True) if cap else (None, False)
+
+    # Auto-detect: scan indices and prefer the highest available one.
+    # On macOS with Continuity Camera, index 0 = iPhone (default),
+    # index 1 = built-in FaceTime — so prefer the last working index.
+    best = None
+    for idx in range(4):
+        cap = _try(idx)
+        if cap:
+            if best:
+                best.release()
+            best = cap
+    return (best, True) if best else (None, False)
 
 
 def read_frame(cap):
@@ -102,7 +121,7 @@ class WiiBaseball:
         sound.init()
 
         # Camera
-        self.cap, self.cam_available = open_camera(args.no_camera)
+        self.cap, self.cam_available = open_camera(args.no_camera, args.camera)
         self.detector = SwingDetector(max_hands=2, flip_camera=True) if self.cam_available else None
 
         # Game objects
