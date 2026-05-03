@@ -281,14 +281,14 @@ class FieldRenderer:
             _Cloud( 850, 62, 175, 36, 0.08),
             _Cloud(1100, 48, 220, 44, 0.12),
         ]
+        # Font must be created before _build_static_field() calls _draw_scoreboard()
+        self._sb_font = pygame.font.SysFont("Arial", 18, bold=True)
+
         self._sky_surf    = self._build_sky()
         self._field_surf  = self._build_static_field()
 
         # Crowd dots (generated once, drawn every frame)
         self._crowd_dots  = self._gen_crowd_dots()
-
-        # Scoreboard digits cache
-        self._sb_font = None
 
         # Batter swing state (0=idle, 1=full swing) — set by main loop
         self.batter_swing: float = 0.0
@@ -498,17 +498,11 @@ class FieldRenderer:
         pygame.draw.rect(surf, SCOREBOARD_BG, (sbx, sby, sbw, sbh), border_radius=6)
         pygame.draw.rect(surf, (60, 140, 60), (sbx, sby, sbw, sbh), 2, border_radius=6)
 
-        if self._sb_font is None:
-            self._sb_font = pygame.font.SysFont("Arial", 18, bold=True)
-
         label = self._sb_font.render("SCORE", True, (120, 200, 120))
         surf.blit(label, label.get_rect(center=(SCREEN_W // 2, sby + 13)))
 
     def _draw_scoreboard_numbers(self, surf, p_score, c_score, inning):
         """Overwrite just the score numbers on the scoreboard each frame."""
-        if self._sb_font is None:
-            self._sb_font = pygame.font.SysFont("Arial", 18, bold=True)
-
         sbw = 220
         sbx = SCREEN_W // 2 - sbw // 2
         sby = HORIZON_Y - 60
