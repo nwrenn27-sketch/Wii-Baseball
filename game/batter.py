@@ -22,6 +22,7 @@ runners reaching index ≥ 3 score.
 
 import random
 from dataclasses import dataclass, field
+from typing import Optional
 
 from game.constants import (
     HIT_PERFECT_WINDOW,
@@ -88,7 +89,7 @@ class Batter:
     # Swing resolution
     # ------------------------------------------------------------------
 
-    def resolve_swing(self, ball, swing_velocity: float | None = None) -> str:
+    def resolve_swing(self, ball, swing_velocity: Optional[float] = None) -> str:
         """
         Determine the outcome of a swing commit from timing only
         (ball.progress near 1.0 = barrel on the ball).

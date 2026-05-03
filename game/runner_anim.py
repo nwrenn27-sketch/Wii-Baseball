@@ -32,12 +32,17 @@ def _leg_screen(leg: int) -> Point:
 
 
 def _diamond_leg_indices(start_leg: int, bases: int) -> List[int]:
-    """Return [start, ..., end] leg indices walking forward `bases` bags."""
+    """Return [start, ..., end] leg indices walking forward up to `bases` bags.
+
+    Runners who score stop at home (leg 0); they do not wrap to first base.
+    """
     path = [start_leg]
     cur = start_leg
     for _ in range(bases):
         cur = (cur + 1) % 4
         path.append(cur)
+        if cur == 0:
+            break
     return path
 
 
@@ -134,18 +139,17 @@ def draw_occupied_base_runners(surface: pygame.Surface, runners: list) -> None:
     if len(runners) < 3:
         return
     sc = 1.55
-    # 1B — face toward 2B
+    # Catcher POV: "next base" screen vectors tilt badly on 1B/2B. Stand upright
+    # (facing screen-up / upfield) like the batter silhouette.
     if runners[0]:
         bx, by = _leg_screen(1)
-        _draw_runner_figure(surface, bx + 4, by, _leg_screen(2), 0.0, sc)
-    # 2B — face toward 3B
+        _draw_runner_figure(surface, bx + 4, by, None, 0.0, sc)
     if runners[1]:
         bx, by = _leg_screen(2)
-        _draw_runner_figure(surface, bx, by - 2, _leg_screen(3), 0.0, sc)
-    # 3B — face toward home
+        _draw_runner_figure(surface, bx, by - 2, None, 0.0, sc)
     if runners[2]:
         bx, by = _leg_screen(3)
-        _draw_runner_figure(surface, bx - 4, by, _leg_screen(0), 0.0, sc)
+        _draw_runner_figure(surface, bx - 4, by, None, 0.0, sc)
 
 
 class RunnerAnimator:
