@@ -1,19 +1,15 @@
 """
 Batter logic: converts swing events + ball state into hit outcomes.
 
-Hit outcome determination
--------------------------
-1. Miss:     swing detected but ball progress < HIT_LATE_WINDOW away from 1.0,
-             OR swing detected with no ball active.
-2. Foul:     swing within HIT_LATE_WINDOW but outside HIT_GOOD_WINDOW, OR
-             swing aimed outside fair territory angle.
-3. Single:   swing within HIT_GOOD_WINDOW, low-to-medium velocity.
-4. Double:   swing within HIT_GOOD_WINDOW, medium velocity.
-5. Triple:   swing within HIT_PERFECT_WINDOW, high velocity.
-6. Home run: swing within HIT_PERFECT_WINDOW, very high velocity.
+Hit outcome determination (timing meter)
+-----------------------------------------
+The player commits a swing (SPACE or camera gesture) while the ball is in flight.
+Quality is driven only by how close ball progress is to the plate (1.0) at
+commit time — the same windows as before, but swing velocity is not used.
 
-The ball must be in the strike zone (or close) for any "hit" outcome.
-A swing on a ball outside the zone can only result in "foul" or "strike".
+1. Miss:     commit too far from the plate (timing_error > HIT_LATE_WINDOW).
+2. Foul:     marginal contact windows / random foul on weak contact.
+3. Single / Double / Triple / Home run: tighter timing → harder contact.
 
 Base-runner model
 -----------------
@@ -31,15 +27,9 @@ from game.constants import (
     HIT_PERFECT_WINDOW,
     HIT_GOOD_WINDOW,
     HIT_LATE_WINDOW,
-    SWING_VEL_THRESHOLD,
     STRIKE_ZONE_W,
     STRIKE_ZONE_H,
 )
-
-# Velocity thresholds (normalised mediapipe units / frame)
-_VEL_HOME_RUN = 0.090
-_VEL_TRIPLE   = 0.070
-_VEL_DOUBLE   = 0.050
 
 # Outcome constants
 OUTCOME_STRIKE   = "strike"
@@ -84,8 +74,8 @@ class Batter:
     Usage
     -----
     batter = Batter(scoreboard)
-    outcome = batter.resolve_swing(ball, swing_velocity)
-    # outcome is one of the OUTCOME_* constants or None if ball not in range
+    outcome = batter.resolve_swing(ball)
+    # outcome is one of the OUTCOME_* constants
     """
 
     def __init__(self, scoreboard: Scoreboard):
@@ -95,22 +85,19 @@ class Batter:
     # Swing resolution
     # ------------------------------------------------------------------
 
-    def resolve_swing(self, ball, swing_velocity: float) -> str:
+    def resolve_swing(self, ball) -> str:
         """
-        Determine the outcome of a swing event.
+        Determine the outcome of a swing commit from timing only
+        (ball.progress near 1.0 = barrel on the ball).
 
         Parameters
         ----------
-        ball           : baseball.Ball instance (current pitch in flight)
-        swing_velocity : float from SwingDetector.swing_velocity
+        ball : baseball.Ball instance (current pitch in flight)
 
         Returns
         -------
         One of the OUTCOME_* string constants.
         """
-        sb = self.sb
-        ab = sb.at_bat
-
         timing_error = abs(ball.progress - 1.0)   # 0 = perfectly timed
         in_zone = (abs(ball.x) < STRIKE_ZONE_W and abs(ball.y) < STRIKE_ZONE_H)
 
@@ -127,9 +114,9 @@ class Batter:
 
         # ------ Contact (ball at least near plate) ------
         if timing_error < HIT_PERFECT_WINDOW:
-            outcome = self._contact_outcome(swing_velocity, timing_error, perfect=True)
+            outcome = self._contact_outcome_timing(timing_error, perfect=True)
         elif timing_error < HIT_GOOD_WINDOW:
-            outcome = self._contact_outcome(swing_velocity, timing_error, perfect=False)
+            outcome = self._contact_outcome_timing(timing_error, perfect=False)
         else:
             # Late/early but still made contact
             if random.random() < 0.55:
@@ -152,27 +139,29 @@ class Batter:
     # Internal outcome helpers
     # ------------------------------------------------------------------
 
-    def _contact_outcome(self, velocity: float, timing_error: float, perfect: bool) -> str:
-        # Degrade velocity based on timing imperfection
-        effective_vel = velocity * (1.0 - timing_error / HIT_LATE_WINDOW * 0.5)
-
+    def _contact_outcome_timing(self, timing_error: float, perfect: bool) -> str:
+        """Map timing error (distance of progress from 1.0) to hit type."""
         if perfect:
-            if effective_vel >= _VEL_HOME_RUN:
+            # 0 = dead center of perfect window → best hits
+            rel = timing_error / max(HIT_PERFECT_WINDOW, 1e-6)
+            if rel < 0.33:
                 return OUTCOME_HOME_RUN
-            if effective_vel >= _VEL_TRIPLE:
+            if rel < 0.55:
                 return OUTCOME_TRIPLE
-            if effective_vel >= _VEL_DOUBLE:
+            if rel < 0.78:
                 return OUTCOME_DOUBLE
             return OUTCOME_SINGLE
-        else:
-            if effective_vel >= _VEL_HOME_RUN:
-                return OUTCOME_DOUBLE
-            if effective_vel >= _VEL_DOUBLE:
-                return OUTCOME_SINGLE
-            # Weak contact: chance of foul
-            if random.random() < 0.4:
-                return OUTCOME_FOUL
+
+        # Good (not perfect) window
+        span = max(HIT_GOOD_WINDOW - HIT_PERFECT_WINDOW, 1e-6)
+        rel = (timing_error - HIT_PERFECT_WINDOW) / span
+        if rel < 0.35:
+            return OUTCOME_DOUBLE
+        if rel < 0.72:
             return OUTCOME_SINGLE
+        if random.random() < 0.45:
+            return OUTCOME_FOUL
+        return OUTCOME_SINGLE
 
     def _apply_hit(self, outcome: str) -> str:
         self.sb.last_outcome   = outcome

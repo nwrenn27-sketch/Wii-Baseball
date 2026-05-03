@@ -25,6 +25,11 @@ from game.constants import (
     PITCH_TYPES,
     HIT_LABEL_DURATION_MS,
     OUT_LABEL_DURATION_MS,
+    HIT_PERFECT_WINDOW,
+    HIT_GOOD_WINDOW,
+    TIMING_METER_MARGIN_BOTTOM,
+    TIMING_METER_W,
+    TIMING_METER_H,
 )
 from game.batter import (
     Scoreboard,
@@ -113,6 +118,52 @@ class HUD:
             # Label
             lbl = self._font_sm.render("CAMERA", True, WII_GRAY)
             surface.blit(lbl, (CAM_OVERLAY_X + 4, CAM_OVERLAY_Y - 18))
+
+    def draw_timing_meter(self, surface: pygame.Surface, ball_progress: float, ball_active: bool):
+        """
+        Horizontal meter: needle tracks pitch progress (release → plate).
+        Yellow band = good timing window; green = perfect. Commit swing when
+        the needle is in those bands at the right moment.
+        """
+        if not ball_active:
+            return
+
+        bx = SCREEN_W // 2 - TIMING_METER_W // 2
+        by = SCREEN_H - TIMING_METER_MARGIN_BOTTOM - TIMING_METER_H
+        pad = 6
+        inner_w = TIMING_METER_W - pad * 2
+        top = by + 4
+        h_inner = TIMING_METER_H - 8
+        left = bx + pad
+        right = left + inner_w
+
+        pygame.draw.rect(surface, WII_GRAY_DARK, (bx, by, TIMING_METER_W, TIMING_METER_H), border_radius=8)
+        pygame.draw.rect(surface, WII_BLUE_LITE, (bx, by, TIMING_METER_W, TIMING_METER_H), 2, border_radius=8)
+
+        x_good = left + int(max(0.0, 1.0 - HIT_GOOD_WINDOW) * inner_w)
+        pygame.draw.rect(
+            surface, (210, 170, 50),
+            (x_good, top, right - x_good, h_inner),
+            border_radius=5,
+        )
+        x_perf = left + int(max(0.0, 1.0 - HIT_PERFECT_WINDOW) * inner_w)
+        pygame.draw.rect(
+            surface, (55, 190, 95),
+            (x_perf, top, right - x_perf, h_inner),
+            border_radius=5,
+        )
+
+        prog = max(0.0, min(1.0, ball_progress))
+        nx = left + int(prog * inner_w)
+        pygame.draw.line(surface, BLACK, (nx, by + 2), (nx, by + TIMING_METER_H - 2), 4)
+        pygame.draw.line(surface, WHITE, (nx, by + 2), (nx, by + TIMING_METER_H - 2), 2)
+
+        cap = self._font_sm.render(
+            "TIMING — press SPACE (or swing on camera) when needle is in yellow or green",
+            True,
+            WII_GRAY,
+        )
+        surface.blit(cap, cap.get_rect(center=(SCREEN_W // 2, by - 14)))
 
     def draw_calibration_prompt(self, surface: pygame.Surface, progress: float):
         """Show calibration instruction overlay."""

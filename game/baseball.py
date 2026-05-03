@@ -14,18 +14,19 @@ to home plate (progress=1.0 means the ball is at z=0, over the plate).
 
 Screen projection
 -----------------
-`get_screen_pos()` converts (x, y, z) to pixel coordinates using a simple
-perspective transform anchored at HORIZON_Y (vanishing point) and PLATE_Y
-(home plate).  Ball radius also scales with depth so it grows as it approaches.
+`get_screen_pos()` converts (x, y, z) to pixels: pitcher toward the horizon
+(top of screen), plate at the bottom — catcher POV. Radius grows sharply as
+the ball approaches the plate.
 """
 
 import math
-import random
+from collections import deque
 
 from game.constants import (
     PITCH_TYPES,
     PITCHER_DEPTH,
-    SCREEN_W,
+    PITCH_SPEED_SCALE,
+    PLATE_X,
     HORIZON_Y,
     PLATE_Y,
     FIELD_WIDTH_NEAR,
@@ -47,13 +48,14 @@ class Ball:
     x, y, z   : floats  current 3-D position
     """
 
-    RADIUS_FAR  = 4   # px when at pitcher depth
-    RADIUS_NEAR = 18  # px when at home plate
+    RADIUS_FAR  = 2    # px at release (tiny in distance)
+    RADIUS_NEAR = 56   # px at plate — strong “ball at the mask” read
 
     def __init__(self):
         self.pitch_type: str  = "fastball"
         self.active:     bool = False
         self.progress:   float = 0.0
+        self._trail: "deque[tuple[int, int, int]]" = deque(maxlen=14)
 
         # 3-D position
         self.x: float = 0.0   # lateral (field units)
@@ -93,9 +95,10 @@ class Ball:
         self._target_y  = target_y
 
         pd = PITCH_TYPES[pitch_type]
-        self._speed  = pd["speed"]
+        self._speed  = pd["speed"] * PITCH_SPEED_SCALE
         self._xa     = pd["x_accel"]
         self._ya     = pd["y_accel"]
+        self._trail.clear()
 
         # Start at pitcher's mound, centred
         self.z  = PITCHER_DEPTH
@@ -136,6 +139,10 @@ class Ball:
                 abs(self.y - self._target_y) < STRIKE_ZONE_H
             )
 
+        if self.active:
+            sx, sy = self.get_screen_pos()
+            self._trail.append((sx, sy, self.get_radius()))
+
     # ------------------------------------------------------------------
     # Screen projection
     # ------------------------------------------------------------------
@@ -147,35 +154,40 @@ class Ball:
         Perspective: the field contracts linearly from FIELD_WIDTH_NEAR at
         PLATE_Y to FIELD_WIDTH_FAR at HORIZON_Y.  We interpolate along z.
         """
-        t = self.z / PITCHER_DEPTH   # 1 = pitcher, 0 = plate
-        # Vertical position on screen
-        screen_y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t))
+        t = self.z / PITCHER_DEPTH   # 1 = pitcher (far), 0 = plate (near camera)
+        # Catcher POV: pitcher toward horizon (top), plate at bottom. Ease so the
+        # ball spends longer small in the tunnel then accelerates into the zone.
+        u = 1.0 - t
+        u_eased = u ** 1.28
+        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * u_eased)
 
-        # Horizontal scale at this depth
-        half_w = (FIELD_WIDTH_FAR / 2) + (FIELD_WIDTH_NEAR / 2 - FIELD_WIDTH_FAR / 2) * t
+        # Horizontal scale: wide near the plate (t=0), narrow at pitcher (t=1)
+        half_w = (FIELD_WIDTH_NEAR / 2) * (1.0 - t) + (FIELD_WIDTH_FAR / 2) * t
         scale  = half_w / max(STRIKE_ZONE_W * 3, 0.001)
 
-        screen_x = int(SCREEN_W // 2 + self.x * scale)
+        screen_x = int(PLATE_X + self.x * scale)
 
         # Vertical: positive y = up = smaller screen_y
-        screen_y -= int(self.y * scale * 0.6)
+        screen_y -= int(self.y * scale * 0.62)
 
         return screen_x, screen_y
 
     def get_radius(self) -> int:
-        """Ball pixel radius, grows as ball approaches camera."""
+        """Ball pixel radius — accelerates growth near the plate (toward camera)."""
         t = max(0.0, min(1.0, self.z / PITCHER_DEPTH))
-        r = self.RADIUS_FAR + (self.RADIUS_NEAR - self.RADIUS_FAR) * (1.0 - t)
+        inv = 1.0 - t
+        eased = inv ** 2.05
+        r = self.RADIUS_FAR + (self.RADIUS_NEAR - self.RADIUS_FAR) * eased
         return max(2, int(r))
 
     def get_shadow_pos(self) -> tuple[int, int]:
-        """Shadow on the ground directly below the ball."""
+        """Shadow on the ground (same vertical path as the ball body)."""
         t = self.z / PITCHER_DEPTH
-        screen_y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * (1.0 - t))
-        screen_x = int(SCREEN_W // 2 + self.x * (
-            (FIELD_WIDTH_FAR / 2 + (FIELD_WIDTH_NEAR / 2 - FIELD_WIDTH_FAR / 2) * t)
-            / max(STRIKE_ZONE_W * 3, 0.001)
-        ))
+        u = 1.0 - t
+        u_eased = u ** 1.28
+        screen_y = int(HORIZON_Y + (PLATE_Y - HORIZON_Y) * u_eased)
+        half_w = (FIELD_WIDTH_NEAR / 2) * (1.0 - t) + (FIELD_WIDTH_FAR / 2) * t
+        screen_x = int(PLATE_X + self.x * (half_w / max(STRIKE_ZONE_W * 3, 0.001)))
         return screen_x, screen_y
 
     # ------------------------------------------------------------------

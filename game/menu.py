@@ -70,7 +70,7 @@ class MenuRenderer:
         ctrl_rect = pygame.Rect(SCREEN_W // 2 - 280, 500, 560, 160)
         self._draw_panel(surface, ctrl_rect, alpha=180)
         controls = [
-            ("Swing",       "Move bat hand fast (left→right)"),
+            ("Swing",       "SPACE (or bat gesture) when timing needle hits yellow/green"),
             ("Calibrate",   "C  — recalibrate camera"),
             ("Quit",        "ESC"),
         ]

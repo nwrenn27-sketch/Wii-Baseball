@@ -23,11 +23,13 @@ TITLE = "Wii Baseball"
 # ---------------------------------------------------------------------------
 # Field geometry (pseudo-3D projection)
 # ---------------------------------------------------------------------------
-HORIZON_Y = 220          # Where the field horizon sits on screen
-PLATE_Y   = 660          # Home plate screen Y (bottom of field)
-PLATE_X   = SCREEN_W // 2
-FIELD_WIDTH_NEAR  = 700  # Width of field at home plate
-FIELD_WIDTH_FAR   = 120  # Width of field at horizon
+HORIZON_Y = 178          # Lower horizon = longer tunnel (catcher POV up the middle)
+PLATE_Y   = 668          # Home plate slightly lower — ball finishes “in your lap”
+# Symmetric catcher / umpire camera — plate centered, look straight at pitcher.
+BATTER_VIEW_OFFSET_X = 0
+PLATE_X   = SCREEN_W // 2 + BATTER_VIEW_OFFSET_X
+FIELD_WIDTH_NEAR  = 920  # Wide at the plate (peripheral grass)
+FIELD_WIDTH_FAR   = 62   # Tight vanishing point toward pitcher
 PITCHER_DEPTH     = 0.60 # Normalized depth (0=plate, 1=horizon) where pitcher stands
 MOUND_Y = int(PLATE_Y - (PLATE_Y - HORIZON_Y) * PITCHER_DEPTH)
 
@@ -48,6 +50,18 @@ BASE_WHITE   = (245, 245, 230)
 FOUL_YELLOW  = (220, 200,  60)
 CROWD_BLUE   = ( 60, 100, 180)
 SHADOW_GRAY  = ( 80,  80,  80, 120)
+
+# Catcher POV field (dirt runway, stadium, grass tiers)
+TRACK_TAN_LIGHT = (210, 172, 120)
+TRACK_TAN_MID   = (175, 135, 88)
+TRACK_TAN_DARK  = (130, 98,  62)
+GRASS_HI        = (78,  178, 88)
+GRASS_MID       = (52,  142, 62)
+GRASS_LO        = (34,  98,  44)
+STADIUM_DEEP    = (28,  34,  48)
+STADIUM_BAND    = (48,  56,  72)
+STADIUM_RAIL    = (90,  98, 115)
+CHALK_GLOW      = (255, 252, 245)
 
 # UI
 WII_BLUE      = ( 20,  80, 200)
@@ -101,6 +115,9 @@ PITCH_TYPES = {
 }
 PITCH_SEQUENCE = ["fastball", "curveball", "splitter", "screwball"]
 
+# Global pitch speed multiplier (slightly slower flight = easier meter timing)
+PITCH_SPEED_SCALE = 0.88
+
 # ---------------------------------------------------------------------------
 # Strike zone  (normalized field units; 0,0 = centre of plate)
 # ---------------------------------------------------------------------------
@@ -118,6 +135,11 @@ SWING_COOLDOWN_MS    = 800     # ms before another swing can register
 HIT_PERFECT_WINDOW  = 0.07
 HIT_GOOD_WINDOW     = 0.14
 HIT_LATE_WINDOW     = 0.20
+
+# Timing meter (drawn during pitch; needle tracks ball progress 0→plate)
+TIMING_METER_MARGIN_BOTTOM = 48
+TIMING_METER_W = 520
+TIMING_METER_H = 26
 
 # ---------------------------------------------------------------------------
 # Base-running

@@ -14,7 +14,7 @@ State machine
 Camera note
 -----------
 If no webcam is found, the game falls back to keyboard-only mode:
-  SPACE = swing (with random timing jitter for variety)
+  SPACE = swing (timing meter at bottom of screen)
 
 Performance
 -----------
@@ -29,7 +29,6 @@ Usage
 
 import sys
 import argparse
-import random
 import time
 
 import cv2
@@ -315,9 +314,7 @@ class WiiBaseball:
 
             if swing_fired and not self._swing_cooldown:
                 self._swing_cooldown = True
-                vel = (self.detector.swing_velocity
-                       if self.detector else random.uniform(0.06, 0.10))
-                outcome = self.batter.resolve_swing(self.ball, vel)
+                outcome = self.batter.resolve_swing(self.ball)
                 self.ball.active = False
                 self._on_outcome(outcome)
 
@@ -392,6 +389,11 @@ class WiiBaseball:
             self.detector,
         )
 
+        if self.state == GameState.PITCHING:
+            self.hud.draw_timing_meter(
+                self.screen, self.ball.progress, self.ball.active
+            )
+
         # Keyboard-only hint
         if not self.cam_available:
             self._render_kb_hint()
@@ -404,12 +406,12 @@ class WiiBaseball:
         idx  = min(len(msgs) - 1, int(p * len(msgs)))
         surf = font.render(msgs[idx], True, WII_YELLOW)
 
-        from game.constants import MOUND_Y, SCREEN_W
+        from game.constants import MOUND_Y, PLATE_X
         surface = self.screen
-        surface.blit(surf, surf.get_rect(center=(SCREEN_W // 2, MOUND_Y - 40)))
+        surface.blit(surf, surf.get_rect(center=(PLATE_X, MOUND_Y - 40)))
 
         # Progress arc
-        cx, cy = SCREEN_W // 2, MOUND_Y - 70
+        cx, cy = PLATE_X, MOUND_Y - 70
         import math
         arc_rect = pygame.Rect(cx - 30, cy - 30, 60, 60)
         if p > 0.01:
@@ -419,8 +421,8 @@ class WiiBaseball:
 
     def _render_kb_hint(self):
         font = pygame.font.SysFont("Arial", 16, bold=True)
-        hint = font.render("No camera — SPACE to swing", True, (180, 180, 180))
-        self.screen.blit(hint, (SCREEN_W - hint.get_width() - 10, SCREEN_H - 30))
+        hint = font.render("No camera — SPACE when timing needle is in yellow/green", True, (180, 180, 180))
+        self.screen.blit(hint, (SCREEN_W - hint.get_width() - 10, SCREEN_H - 82))
 
 
 # ---------------------------------------------------------------------------
