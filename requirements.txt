@@ -1,0 +1,8 @@
+# Wii Baseball — Python dependencies
+# Install with:  pip install -r requirements.txt
+# Tested on Python 3.10 / 3.11 / 3.12
+
+pygame>=2.5.0
+opencv-python>=4.9.0
+mediapipe>=0.10.9
+numpy>=1.24.0
