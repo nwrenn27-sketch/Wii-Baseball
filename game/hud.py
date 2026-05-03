@@ -21,8 +21,8 @@ from game.batter import (
 )
 
 # Webcam overlay
-_CAM_W = 200
-_CAM_H = 150
+_CAM_W = 240
+_CAM_H = 180
 _CAM_X = SCREEN_W - _CAM_W - 12
 _CAM_Y = SCREEN_H - _CAM_H - 12
 
@@ -287,16 +287,14 @@ class HUD:
 
     def _draw_cam_overlay(self, surf: pygame.Surface, detector):
         rect = pygame.Rect(_CAM_X, _CAM_Y, _CAM_W, _CAM_H)
-        # Border
+        border_col = (50, 230, 80) if getattr(detector, "hand_visible", False) else WII_BLUE_LITE
         border = pygame.Surface((_CAM_W + 4, _CAM_H + 4), pygame.SRCALPHA)
         pygame.draw.rect(border, (0, 0, 0, 120), border.get_rect(), border_radius=6)
-        pygame.draw.rect(border, WII_BLUE_LITE, border.get_rect(), 2, border_radius=6)
+        pygame.draw.rect(border, border_col, border.get_rect(), 2, border_radius=6)
         surf.blit(border, (rect.x - 2, rect.y - 2))
-        # Camera image
         try:
             detector.draw_overlay(surf, rect)
         except Exception:
             pass
-        # Label
         lbl = self._f_sm.render("CAM", True, WII_GRAY)
         surf.blit(lbl, (rect.x + 4, rect.y - 17))
